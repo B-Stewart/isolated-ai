@@ -44,7 +44,7 @@ docker run -it --rm `
 docker run -it --rm `
   --cap-drop ALL `
   --security-opt no-new-privileges:true `
-  --pids-limit 256 `
+  --pids-limit 2048 `
   --tmpfs /tmp:rw,noexec,nosuid,size=256m `
   -v claude-auth:/home/claude/.claude `
   -v "${PWD}:/workspace" `
@@ -55,7 +55,7 @@ docker run -it --rm `
 
 - `--cap-drop ALL`: removes Linux capabilities from the container process, reducing kernel-level powers.
 - `--security-opt no-new-privileges:true`: blocks privilege escalation (including setuid/setgid paths).
-- `--pids-limit 256`: limits process count to reduce fork-bomb/resource exhaustion risk.
+- `--pids-limit 2048`: limits process count to reduce fork-bomb/resource exhaustion risk while allowing heavier dev/build workloads.
 - `--tmpfs /tmp:rw,noexec,nosuid,size=256m`: makes `/tmp` ephemeral, disallows executing from `/tmp` (`noexec`), and disables setuid semantics (`nosuid`).
 
 #### Trade-offs

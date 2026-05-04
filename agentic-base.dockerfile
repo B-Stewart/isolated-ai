@@ -94,6 +94,18 @@ RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
        /home/agent/.local/bin/codex \
        /home/agent/.local/bin/gemini
 
+# Pre-create config dirs for the agents and Playwright. Docker's named-volume init
+# copies image-side ownership/perms into a fresh volume on first mount, so these
+# dirs must exist as 1001:1001 in the image — otherwise the volumes would be
+# created root-owned and the agent user couldn't write to them.
+RUN mkdir -p \
+        /home/agent/.claude \
+        /home/agent/.local/share/opencode \
+        /home/agent/.codex \
+        /home/agent/.gemini \
+        /home/agent/.cache/ms-playwright \
+    && chown -R 1001:1001 /home/agent/.claude /home/agent/.local /home/agent/.codex /home/agent/.gemini /home/agent/.cache
+
 # Firewall script — root-owned, executable, dormant unless invoked
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh
 RUN chown root:root /usr/local/bin/init-firewall.sh \

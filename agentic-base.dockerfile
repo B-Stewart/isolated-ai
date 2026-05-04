@@ -76,7 +76,8 @@ ENV PATH=/home/agent/.local/bin:${PATH}
 # Copy global node_modules from the builder
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 
-# Agent bin shims — recreate the symlinks npm installs (COPY would dereference them and break node_modules resolution)
+# Agent bin shims — recreate the symlinks npm installs (COPY would dereference them and break node_modules resolution).
+# claude.exe is the real Linux launcher shipped by @anthropic-ai/claude-code, not a Windows artifact.
 RUN ln -sf ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/local/bin/claude \
     && ln -sf ../lib/node_modules/opencode-ai/bin/opencode /usr/local/bin/opencode \
     && ln -sf ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \

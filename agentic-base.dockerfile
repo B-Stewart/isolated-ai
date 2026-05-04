@@ -18,6 +18,15 @@ RUN --mount=type=cache,target=/root/.npm \
 # RUN --mount=type=cache,target=/root/.npm \
 #     npm install -g opencode-ai@1.14.33
 
+# TODO: revisit Codex install. Same root cause as OpenCode: the bin shim at
+# /usr/local/bin/codex is a symlink in the builder; Docker's COPY --from
+# dereferences it so the runtime gets a regular file. The shim then can't
+# resolve its sibling node_modules to find @openai/codex-linux-x64 and
+# fails with "Missing optional dependency". Fix: replace the COPY of
+# /usr/local/bin/codex with `RUN ln -sf ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex`.
+# RUN --mount=type=cache,target=/root/.npm \
+#     npm install -g @openai/codex@0.128.0
+
 # Runtime stage
 FROM node:24-slim
 
@@ -80,12 +89,16 @@ ENV PATH=/home/agent/.local/bin:${PATH}
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=builder /usr/local/bin/claude /usr/local/bin/claude
 # COPY --from=builder /usr/local/bin/opencode /usr/local/bin/opencode
+# COPY --from=builder /usr/local/bin/codex /usr/local/bin/codex
 
 # Symlink agent bins into the user's local bin
 RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
     && chown -h 1001:1001 /home/agent/.local/bin/claude
 #    && ln -sf /usr/local/bin/opencode /home/agent/.local/bin/opencode \
-#    && chown -h 1001:1001 /home/agent/.local/bin/claude /home/agent/.local/bin/opencode
+#    && ln -sf /usr/local/bin/codex /home/agent/.local/bin/codex \
+#    && chown -h 1001:1001 \
+#       /home/agent/.local/bin/claude \
+#       /home/agent/.local/bin/codex
 
 USER agent
 WORKDIR /workspace

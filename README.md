@@ -21,6 +21,53 @@ FROM local/agentic-base:1
 # project-specific layers (Bun, env vars, etc.)
 ```
 
+## Pre-installed MCP servers
+
+Four MCP servers ship on PATH inside the image. Versions are pinned in `agentic-base.dockerfile`; rebuild the base to update them.
+
+| Server | Binary | Purpose |
+|---|---|---|
+| context7 | `context7-mcp` | Up-to-date library docs (Upstash) |
+| Playwright | `playwright-mcp` | Browser automation; needs `npx playwright install chromium` once per `pw-browsers` cache |
+| Figma (Framelink) | `figma-developer-mcp` | Public Figma REST API; requires a personal access token |
+| Serena | `serena start-mcp-server` | Code-symbolic agent toolkit (uv-installed) |
+
+### Registering them with Claude Code
+
+MCP configs live in `~/.claude/settings.json`, which is mounted via the `claude-auth` named volume — register once and they persist across container restarts and rebuilds. Run inside any container that uses this base:
+
+```bash
+# context7 — no args
+claude mcp add -s user context7 -- context7-mcp
+
+# Playwright (Chromium binaries fetched on first use; mount pw-browsers in your consumer to persist)
+claude mcp add -s user playwright -- playwright-mcp
+
+# Figma (Framelink) — supply your token via env var; --stdio puts the server in MCP transport mode
+claude mcp add -s user -e FIGMA_API_KEY=<your-figma-pat> figma -- figma-developer-mcp --stdio
+
+# Serena
+claude mcp add -s user serena -- serena start-mcp-server
+```
+
+Inspect or remove with `claude mcp list` and `claude mcp remove <name>`.
+
+### Figma desktop alternative
+
+If you'd rather use Figma's desktop app's local MCP server (more capable — supports write operations, Code Connect, FigJam) instead of Framelink's REST-based one, point Claude at the desktop's SSE endpoint via Docker's host-gateway DNS:
+
+```bash
+claude mcp add -s user -t sse figma-desktop http://host.docker.internal:3845
+```
+
+The Figma desktop app must be running on your host. Note: when the egress firewall is enabled it does NOT allowlist `host.docker.internal` by default — extend the allowlist via `FIREWALL_EXTRA_HOSTS` if you turn the firewall on while using the desktop server.
+
+### Notes
+
+- **Playwright browsers** aren't baked into the image (the apt block has only the runtime libs). Run `npx playwright install chromium` once after registering the MCP; the binaries land at `~/.cache/ms-playwright`, which is pre-created with `agent` ownership in the image. Mount a named volume there in your consumer if you want them to persist across rebuilds.
+- **Serena** may write per-user config to `~/.serena/`. That directory is *not* in the pre-create list and *not* on a named volume, so it gets reset on container rebuild. If you want it to persist, mount a `serena-config` volume at `/home/agent/.serena` in your consumer.
+- **Figma personal access token** lives in your Claude config (`~/.claude/settings.json`) via `claude mcp add -e`. Treat that volume as a credential store accordingly.
+
 ## Standalone hardened use
 
 The image is neutral — no `ENTRYPOINT`, no `CMD`. Invoke the agent you want explicitly.

@@ -22,7 +22,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         git \
         curl \
         ca-certificates \
+        dnsutils \
         sudo \
+        iptables \
+        ipset \
         libasound2 \
         libatk-bridge2.0-0 \
         libatk1.0-0 \

@@ -15,6 +15,15 @@ RUN --mount=type=cache,target=/root/.npm \
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g @google/gemini-cli@0.40.1
 
+RUN --mount=type=cache,target=/root/.npm \
+    npm install -g @upstash/context7-mcp@2.2.4
+
+RUN --mount=type=cache,target=/root/.npm \
+    npm install -g @playwright/mcp@0.0.73
+
+RUN --mount=type=cache,target=/root/.npm \
+    npm install -g figma-developer-mcp@0.11.0
+
 # Runtime stage
 FROM node:24-slim
 
@@ -79,23 +88,42 @@ ENV DISABLE_AUTOUPDATER=1
 # Copy global node_modules from the builder
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 
-# Agent bin shims — recreate the symlinks npm installs (COPY would dereference them and break node_modules resolution).
+# Agent + MCP bin shims — recreate the symlinks npm installs (COPY would dereference them and break node_modules resolution).
 # claude.exe is the real Linux launcher shipped by @anthropic-ai/claude-code, not a Windows artifact.
 RUN ln -sf ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/local/bin/claude \
     && ln -sf ../lib/node_modules/opencode-ai/bin/opencode /usr/local/bin/opencode \
     && ln -sf ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
-    && ln -sf ../lib/node_modules/@google/gemini-cli/bundle/gemini.js /usr/local/bin/gemini
+    && ln -sf ../lib/node_modules/@google/gemini-cli/bundle/gemini.js /usr/local/bin/gemini \
+    && ln -sf ../lib/node_modules/@upstash/context7-mcp/dist/index.js /usr/local/bin/context7-mcp \
+    && ln -sf ../lib/node_modules/@playwright/mcp/cli.js /usr/local/bin/playwright-mcp \
+    && ln -sf ../lib/node_modules/figma-developer-mcp/dist/bin.js /usr/local/bin/figma-developer-mcp
 
 # Symlink agent bins into the user's local bin
 RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
     && ln -sf /usr/local/bin/opencode /home/agent/.local/bin/opencode \
     && ln -sf /usr/local/bin/codex /home/agent/.local/bin/codex \
     && ln -sf /usr/local/bin/gemini /home/agent/.local/bin/gemini \
+    && ln -sf /usr/local/bin/context7-mcp /home/agent/.local/bin/context7-mcp \
+    && ln -sf /usr/local/bin/playwright-mcp /home/agent/.local/bin/playwright-mcp \
+    && ln -sf /usr/local/bin/figma-developer-mcp /home/agent/.local/bin/figma-developer-mcp \
+    && ln -sf /usr/local/bin/serena /home/agent/.local/bin/serena \
     && chown -h 1001:1001 \
        /home/agent/.local/bin/claude \
        /home/agent/.local/bin/opencode \
        /home/agent/.local/bin/codex \
-       /home/agent/.local/bin/gemini
+       /home/agent/.local/bin/gemini \
+       /home/agent/.local/bin/context7-mcp \
+       /home/agent/.local/bin/playwright-mcp \
+       /home/agent/.local/bin/figma-developer-mcp \
+       /home/agent/.local/bin/serena
+
+# Install uv (Python tool manager) and serena (uv-installed MCP server). uv is a
+# standalone Rust binary so we don't need a Python interpreter at this layer; uv
+# fetches its own Python when serena's tool install asks for 3.13.
+RUN curl -LsSf https://astral.sh/uv/install.sh \
+    | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh \
+    && UV_TOOL_BIN_DIR=/usr/local/bin UV_TOOL_DIR=/usr/local/uv-tools \
+       uv tool install -p 3.13 serena-agent@1.2.0 --prerelease=allow
 
 # Pre-create config dirs for the agents and Playwright. Docker's named-volume init
 # copies image-side ownership/perms into a fresh volume on first mount, so these

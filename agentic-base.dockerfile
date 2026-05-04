@@ -2,9 +2,9 @@
 # Builder stage — agents installed here, copied to runtime stage
 FROM node:24-slim AS builder
 
-# Cache mounts make repeat builds fast
+# Each agent installs in its own RUN line so a single failure doesn't cascade.
 RUN --mount=type=cache,target=/root/.npm \
-    npm config set update-notifier false
+    npm install -g @anthropic-ai/claude-code@2.1.126
 
 # Runtime stage
 FROM node:24-slim
@@ -63,6 +63,14 @@ RUN groupadd --gid 1001 agent \
 
 ENV HOME=/home/agent
 ENV PATH=/home/agent/.local/bin:${PATH}
+
+# Copy global node_modules and bin shims from the builder
+COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=builder /usr/local/bin/claude /usr/local/bin/claude
+
+# Symlink agent bins into the user's local bin
+RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
+    && chown -h 1001:1001 /home/agent/.local/bin/claude
 
 USER agent
 WORKDIR /workspace

@@ -72,6 +72,9 @@ RUN groupadd --gid 1001 agent \
 
 ENV HOME=/home/agent
 ENV PATH=/home/agent/.local/bin:${PATH}
+# Disable Claude Code's auto-updater — agent versions are pinned in this dockerfile;
+# rebuild the image to pick up newer versions, don't let Claude self-update in place.
+ENV DISABLE_AUTOUPDATER=1
 
 # Copy global node_modules from the builder
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules

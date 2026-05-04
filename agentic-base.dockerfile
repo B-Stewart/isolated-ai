@@ -27,6 +27,15 @@ RUN --mount=type=cache,target=/root/.npm \
 # RUN --mount=type=cache,target=/root/.npm \
 #     npm install -g @openai/codex@0.128.0
 
+# TODO: revisit Gemini install. Same root cause as OpenCode/Codex: the bin shim
+# at /usr/local/bin/gemini is a symlink in the builder; Docker's COPY --from
+# dereferences it, so the runtime gets a regular file. The ES module entrypoint
+# then tries to import a sibling bundle file (gemini-XXXX.js) and fails with
+# ERR_MODULE_NOT_FOUND. Fix: replace the COPY of /usr/local/bin/gemini with
+# `RUN ln -sf ../lib/node_modules/@google/gemini-cli/bundle/gemini.js /usr/local/bin/gemini`.
+# RUN --mount=type=cache,target=/root/.npm \
+#     npm install -g @google/gemini-cli@0.40.1
+
 # Runtime stage
 FROM node:24-slim
 
@@ -90,15 +99,14 @@ COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=builder /usr/local/bin/claude /usr/local/bin/claude
 # COPY --from=builder /usr/local/bin/opencode /usr/local/bin/opencode
 # COPY --from=builder /usr/local/bin/codex /usr/local/bin/codex
+# COPY --from=builder /usr/local/bin/gemini /usr/local/bin/gemini
 
 # Symlink agent bins into the user's local bin
 RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
     && chown -h 1001:1001 /home/agent/.local/bin/claude
 #    && ln -sf /usr/local/bin/opencode /home/agent/.local/bin/opencode \
 #    && ln -sf /usr/local/bin/codex /home/agent/.local/bin/codex \
-#    && chown -h 1001:1001 \
-#       /home/agent/.local/bin/claude \
-#       /home/agent/.local/bin/codex
+#    && ln -sf /usr/local/bin/gemini /home/agent/.local/bin/gemini \
 
 USER agent
 WORKDIR /workspace

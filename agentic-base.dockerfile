@@ -94,5 +94,15 @@ RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
        /home/agent/.local/bin/codex \
        /home/agent/.local/bin/gemini
 
+# Firewall script — root-owned, executable, dormant unless invoked
+COPY init-firewall.sh /usr/local/bin/init-firewall.sh
+RUN chown root:root /usr/local/bin/init-firewall.sh \
+    && chmod 0755 /usr/local/bin/init-firewall.sh
+
+# Allow agent to run only the firewall script via sudo without password
+RUN echo 'agent ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh' \
+    > /etc/sudoers.d/agent-firewall \
+    && chmod 0440 /etc/sudoers.d/agent-firewall
+
 USER agent
 WORKDIR /workspace

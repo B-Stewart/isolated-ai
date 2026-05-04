@@ -4,6 +4,10 @@
 # Requires --cap-add=NET_ADMIN at container run time.
 #
 # Extra hosts: comma-separated FIREWALL_EXTRA_HOSTS env var.
+#
+# Limitation: hosts are resolved to IPs at init time. CDN-backed targets (npm, GitHub objects)
+# rotate IPs over hours/days; if a long-lived container starts seeing previously-working hosts
+# blocked, re-run this script to re-resolve.
 set -euo pipefail
 
 ALLOWED_HOSTS=(
@@ -24,9 +28,9 @@ if [ -n "${FIREWALL_EXTRA_HOSTS:-}" ]; then
   done
 fi
 
-# Reset
-iptables -F
-iptables -X
+# Reset (|| true on re-invocation: built-in chains may have no rules to flush, no user chains to delete)
+iptables -F || true
+iptables -X || true
 ipset destroy allowed-hosts 2>/dev/null || true
 
 # Default-deny output, allow input/forward minimally
@@ -50,7 +54,10 @@ iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
 ipset create allowed-hosts hash:ip family inet hashsize 1024 maxelem 65536
 
 for host in "${ALLOWED_HOSTS[@]}"; do
-  for ip in $(dig +short "$host" A | grep -E '^[0-9]'); do
+  # `|| true` guards against `set -o pipefail` aborting on hosts with no A records (e.g. AAAA-only,
+  # NXDOMAIN, or transient DNS hiccups). Without it, one bad host would drop the script mid-flight
+  # leaving default-DROP active with no allowlist applied — silently bricking all egress.
+  for ip in $(dig +short "$host" A | grep -E '^[0-9]' || true); do
     ipset add allowed-hosts "$ip" -exist
   done
 done

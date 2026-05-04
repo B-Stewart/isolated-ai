@@ -7,7 +7,6 @@ Image tag: `local/agentic-base:1` (no registry; lives in your local Docker daemo
 ## Build
 
 ```powershell
-$env:DOCKER_BUILDKIT = "1"
 docker build -f agentic-base.dockerfile -t local/agentic-base:1 .
 ```
 

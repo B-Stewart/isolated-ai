@@ -137,6 +137,13 @@ RUN mkdir -p \
         /home/agent/.cache/ms-playwright \
     && chown -R 1001:1001 /home/agent/.claude /home/agent/.local /home/agent/.codex /home/agent/.gemini /home/agent/.cache
 
+# ~/.claude.json (project manifest, MCP servers, recent projects) lives at home root,
+# NOT inside ~/.claude/. Symlinking it into the .claude dir makes writes land in the
+# claude-auth volume so MCP registrations and project state persist across rebuilds.
+# Claude resolves the symlink at runtime; the target lives inside the mounted volume.
+RUN ln -sf /home/agent/.claude/.claude.json /home/agent/.claude.json \
+    && chown -h 1001:1001 /home/agent/.claude.json
+
 # Firewall script — root-owned, executable, dormant unless invoked
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh
 RUN chown root:root /usr/local/bin/init-firewall.sh \

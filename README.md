@@ -21,6 +21,16 @@ FROM local/agentic-base:1
 # project-specific layers (Bun, env vars, etc.)
 ```
 
+## Windows host caveats
+
+When the consumer's workspace is bind-mounted from a Windows path (the default for VS Code "Reopen in Container" on Windows + Docker Desktop), a few rough edges show up:
+
+- **File watchers don't fire across the bind mount.** Linux's `inotify` doesn't propagate from Windows-side file changes. Tools running inside the container — Vite's HMR watcher, Nx's project-graph file watcher, etc. — won't notice when you save files in the editor. The fix is to put each tool in polling mode (e.g., `server.watch.usePolling = true` in `vite.config.*`). VS Code's own editor-to-container file sync uses a separate mechanism and works fine.
+- **Nx project graph regenerates more often than expected.** The Nx daemon's Unix socket and mtime-based cache don't always survive cleanly across the bind mount. Symptom: every `nx ...` invocation prints "Computing project graph" and takes a few seconds. Workarounds: keep `NX_SKIP_NATIVE_FILE_CACHE=true` if `/tmp` is `noexec`, or mount `.nx/` as a named volume.
+- **`node_modules` reads are slower than they need to be** because every `require()` resolves through the WSL2 file translation layer.
+
+The fully-correct fix is **WSL2-native**: clone the consumer repo into your WSL2 distro (e.g., `~/dev/...` inside Ubuntu/Debian) and reopen the devcontainer from there. The bind mount becomes Linux-on-Linux — inotify works, mtimes are stable, file I/O is fast. This is the recommended setup for daily development on Windows hosts; the Windows-side bind mount works for casual or one-off use but expect the caveats above.
+
 ## Pre-installed MCP servers
 
 Four MCP servers ship on PATH inside the image. Versions are pinned in `agentic-base.dockerfile`; rebuild the base to update them.

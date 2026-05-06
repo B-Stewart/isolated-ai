@@ -21,6 +21,8 @@ FROM local/agentic-base:1
 # project-specific layers (Bun, env vars, etc.)
 ```
 
+You can use this project's [devcontainer.json](.devcontainer/devcontainer.json) as a starting point for your workspace.
+
 ## Windows host caveats
 
 When the consumer's workspace is bind-mounted from a Windows path (the default for VS Code "Reopen in Container" on Windows + Docker Desktop), a few rough edges show up:
@@ -81,31 +83,6 @@ The Figma desktop app must be running on your host. Note: when the egress firewa
 ## Standalone hardened use
 
 The image is neutral — no `ENTRYPOINT`, no `CMD`. Invoke the agent you want explicitly.
-
-### One-time auth setup (per agent)
-
-Each agent gets its own named Docker volume so auth state survives container restarts.
-
-```powershell
-# Create one volume per agent you intend to use
-docker volume create claude-auth
-docker volume create opencode-auth
-docker volume create codex-auth
-docker volume create gemini-auth
-```
-
-First-run login (Claude shown; same pattern for the others, with the agent's config dir):
-
-```powershell
-$dockerArgs = @(
-  '-it', '--rm',
-  '-v', 'claude-auth:/home/agent/.claude',
-  '-v', "${PWD}:/workspace",
-  'local/agentic-base:1',
-  'claude', 'login'
-)
-docker run @dockerArgs
-```
 
 ### Workspace run (hardened, firewall off)
 

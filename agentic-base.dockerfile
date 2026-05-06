@@ -71,6 +71,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libxtst6 \
         fonts-liberation \
         xdg-utils \
+        python3 \
+        python-is-python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user
@@ -84,6 +86,9 @@ ENV PATH=/home/agent/.local/bin:${PATH}
 # Disable Claude Code's auto-updater — agent versions are pinned in this dockerfile;
 # rebuild the image to pick up newer versions, don't let Claude self-update in place.
 ENV DISABLE_AUTOUPDATER=1
+# Disable Claude Code's auto-memory feature, because we're containerized but sharing the mounted claude settings
+# our project might overlap memory with another if we don't turn this off.
+ENV CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 
 # Copy global node_modules from the builder
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules

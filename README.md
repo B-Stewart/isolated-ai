@@ -2,36 +2,69 @@
 
 Local-only Docker base image hosting four coding agents — Claude Code, OpenCode, Codex CLI, Gemini CLI — for use as a Dev Container base or as a standalone hardened agent host.
 
-Image tag: `local/agentic-base:1` (no registry; lives in your local Docker daemon).
+Image tag: `braydens/agentic-base:latest`
 
 ## Build
 
-```powershell
-docker build -f agentic-base.dockerfile -t local/agentic-base:1 .
+```
+docker build -f agentic-base.dockerfile -t braydens/agentic-base:latest .
 ```
 
-Rebuild whenever you want fresher agent versions; bump the pinned versions in `agentic-base.dockerfile` first.
+Rebuild whenever you want fresher agent versions as everything is pinned to @latest.
+
+## Push
+
+If you want to push the new version to docker hub
+
+```
+docker push braydens/agentic-base:latest
+```
 
 ## Use as a Dev Container base
 
-In a consumer repo's `.devcontainer/Dockerfile`:
+You can use this project's [devcontainer.json](.devcontainer/devcontainer.json) as a starting point for your workspace.
+
+If you need extras in your project's specific docker file you can create a custom docker file that extends it in `.devcontainer/Dockerfile`:
 
 ```dockerfile
-FROM local/agentic-base:1
+FROM braydens/agentic-base:latest
 # project-specific layers (Bun, env vars, etc.)
 ```
 
-You can use this project's [devcontainer.json](.devcontainer/devcontainer.json) as a starting point for your workspace.
+And update your devcontainer configuration to point to it.
 
 ## Windows host caveats
 
 When the consumer's workspace is bind-mounted from a Windows path (the default for VS Code "Reopen in Container" on Windows + Docker Desktop), a few rough edges show up:
 
 - **File watchers don't fire across the bind mount.** Linux's `inotify` doesn't propagate from Windows-side file changes. Tools running inside the container — Vite's HMR watcher, Nx's project-graph file watcher, etc. — won't notice when you save files in the editor. The fix is to put each tool in polling mode (e.g., `server.watch.usePolling = true` in `vite.config.*`). VS Code's own editor-to-container file sync uses a separate mechanism and works fine.
-- **Nx project graph regenerates more often than expected.** The Nx daemon's Unix socket and mtime-based cache don't always survive cleanly across the bind mount. Symptom: every `nx ...` invocation prints "Computing project graph" and takes a few seconds. Workarounds: keep `NX_SKIP_NATIVE_FILE_CACHE=true` if `/tmp` is `noexec`, or mount `.nx/` as a named volume.
 - **`node_modules` reads are slower than they need to be** because every `require()` resolves through the WSL2 file translation layer.
 
-The fully-correct fix is **WSL2-native**: clone the consumer repo into your WSL2 distro (e.g., `~/dev/...` inside Ubuntu/Debian) and reopen the devcontainer from there. The bind mount becomes Linux-on-Linux — inotify works, mtimes are stable, file I/O is fast. This is the recommended setup for daily development on Windows hosts; the Windows-side bind mount works for casual or one-off use but expect the caveats above.
+The fully-correct fix is **WSL2-native**: clone the consumer repo into your WSL2 distro (e.g., `~/dev/...` inside Ubuntu/Debian) and reopen the devcontainer from there. The bind mount becomes Linux-on-Linux — inotify works, mtimes are stable, file I/O is fast. This is the recommended setup for daily development on Windows hosts; the Windows-side bind mount works for casual or one-off use but expect the caveats above. VS Code handles most of this natively by using the "Clone Repository in Container Volume" command.
+
+## Git and Git LFS
+
+`git` and `git-lfs` are baked into the image, with LFS filters registered system-wide (`git lfs install --system`). Any repo with LFS-tracked files works in `/workspace` without per-user setup — `git clone`, `git pull`, and `git push` handle large files transparently.
+
+LFS blobs land under `.git/lfs/objects`. On Windows bind-mounted workspaces they pay the same WSL2 translation cost flagged above, so LFS-heavy repos are a good candidate for VS Code's **Clone Repository in (Named) Container Volume** flow — the `.git` tree lives entirely in a Docker volume on the Linux side and LFS smudge/clean operations run at native speed.
+
+### Auth from inside the container (VS Code path)
+
+When you "Reopen in Container" from VS Code, the Dev Containers extension forwards your host's git credentials automatically — no devcontainer.json changes needed:
+
+- **SSH** — your host's running SSH agent socket is mounted in and `SSH_AUTH_SOCK` is set. Keys never enter the container; signing happens on the host.
+- **HTTPS** — a credential helper inside the container proxies back to your host's credential manager (Windows Credential Manager, macOS Keychain, libsecret on Linux). Tokens stored by `gh auth` on the host, GitLab/Bitbucket creds, etc. are all reachable.
+- **Identity** — `user.name` and `user.email` from your host git config are injected so commits carry the correct author.
+
+The hardening flags (`--cap-drop=ALL`, `no-new-privileges`) don't interfere — credential forwarding rides on a socket mount, not a Linux capability.
+
+### Auth outside VS Code (standalone runs)
+
+When you launch the container directly via `docker run` (see "Standalone hardened use" below), VS Code's forwarding isn't in play. Options, easiest first:
+
+- **Forward an SSH agent socket manually** — `-v "${SSH_AUTH_SOCK}:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent` (Linux/macOS host). Keys stay on the host.
+- **Mount `~/.ssh` read-only** — simplest, but exposes the key files to the container; only acceptable for trusted workloads.
+- **Add the `gh` CLI to your downstream image** — not pre-installed (keeps the base lean). Mount a persistent auth volume, run `gh auth login` once, then `gh auth setup-git` configures git's HTTPS credential helper inside the container. `.devcontainer/devcontainer.json` has a commented-out example mount (`gh-auth` → `/home/agent/.config/gh`) showing the pattern.
 
 ## Pre-installed MCP servers
 
@@ -64,15 +97,45 @@ claude mcp add -s user serena -- serena start-mcp-server
 
 Inspect or remove with `claude mcp list` and `claude mcp remove <name>`.
 
-### Figma desktop alternative
+### Registering them with OpenCode
 
-If you'd rather use Figma's desktop app's local MCP server (more capable — supports write operations, Code Connect, FigJam) instead of Framelink's REST-based one, point Claude at the desktop's SSE endpoint via Docker's host-gateway DNS:
+OpenCode has no `opencode mcp add` CLI — MCP servers are declared in `opencode.json` directly. Two places work:
 
-```bash
-claude mcp add -s user -t sse figma-desktop http://host.docker.internal:3845
+- **Global** — `~/.config/opencode/opencode.json` inside the container. Backed by the `opencode-config` named volume in the default `devcontainer.json`, so MCP registrations persist across rebuilds (parallel to how `claude-auth` persists Claude's `~/.claude.json`). Auth lives in a separate `opencode-auth` volume; OpenCode splits config and data across two XDG dirs, hence two volumes.
+- **Project-level** — `opencode.json` at the repo root. Version-controlled and scoped to the project; useful when MCP setup is part of the repo's contract rather than a per-user choice.
+
+Either way, drop the servers under the top-level `mcp` key:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "context7": {
+      "type": "local",
+      "command": ["context7-mcp"],
+      "enabled": true
+    },
+    "playwright": {
+      "type": "local",
+      "command": ["playwright-mcp"],
+      "enabled": true
+    },
+    "figma": {
+      "type": "local",
+      "command": ["figma-developer-mcp", "--stdio"],
+      "environment": { "FIGMA_API_KEY": "<your-figma-pat>" },
+      "enabled": true
+    },
+    "serena": {
+      "type": "local",
+      "command": ["serena", "start-mcp-server"],
+      "enabled": true
+    }
+  }
+}
 ```
 
-The Figma desktop app must be running on your host. Note: when the egress firewall is enabled it does NOT allowlist `host.docker.internal` by default — extend the allowlist via `FIREWALL_EXTRA_HOSTS` if you turn the firewall on while using the desktop server.
+Inspect connection state and auth with `opencode mcp list`; troubleshoot a misbehaving server with `opencode mcp debug <name>`.
 
 ### Notes
 

@@ -1,7 +1,7 @@
 {
   "name": "isolated-ai (agentic)",
-  // Use custom image
-  "image": "local/agentic-base:1",
+  // Use the cloud image if you don't need customizations
+  "image": "braydens/agentic-base:latest",
   // or custom docker file in folder with "Dockerfile"
   // "build": {
   //   "dockerfile": "Dockerfile" 
@@ -10,23 +10,21 @@
   "containerUser": "agent",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
-
   // "forwardPorts": [3000],
   // "portsAttributes": {
   //   "3000": { "label": "web" }
   // },
-
   // Per-agent named auth volumes. Mount only the volumes for agents you actually use.
   // First-run login expected on first use of each agent.
   "mounts": [
     "source=claude-auth,target=/home/agent/.claude,type=volume",
     "source=opencode-auth,target=/home/agent/.local/share/opencode,type=volume",
+    "source=opencode-config,target=/home/agent/.config/opencode,type=volume",
     "source=codex-auth,target=/home/agent/.codex,type=volume",
     "source=gemini-auth,target=/home/agent/.gemini,type=volume",
     "source=pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume"
   ],
-
-  // Hardening profile. See docs/superpowers/specs/2026-05-04-agentic-devcontainer-design.md
+  // Hardening profile.
   // for the rationale behind each flag.
   //
   // FIREWALL: this devcontainer ships with the egress firewall OFF. Enabling it requires
@@ -43,17 +41,13 @@
     // FIREWALL: "--cap-add=NET_ADMIN",
     "--security-opt=no-new-privileges:true",
     "--pids-limit=4096",
-    "--tmpfs=/tmp:rw,nosuid,size=512m"
+    "--tmpfs=/tmp:rw,nosuid,exec,size=512m"
   ],
   // FIREWALL: "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
-
   // "postCreateCommand": "npm install",
-
   "customizations": {
     "vscode": {
-      "extensions": [
-
-      ]
+      "extensions": []
     }
   }
 }

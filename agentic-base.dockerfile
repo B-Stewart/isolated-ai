@@ -4,25 +4,25 @@ FROM node:24-slim AS builder
 
 # Each agent installs in its own RUN line so a single failure doesn't cascade.
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @anthropic-ai/claude-code@2.1.126
+    npm install -g @anthropic-ai/claude-code@latest
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g opencode-ai@1.14.33
+    npm install -g opencode-ai@latest
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @openai/codex@0.128.0
+    npm install -g @openai/codex@latest
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @google/gemini-cli@0.40.1
+    npm install -g @google/gemini-cli@latest
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @upstash/context7-mcp@2.2.4
+    npm install -g @upstash/context7-mcp@latest
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @playwright/mcp@0.0.73
+    npm install -g @playwright/mcp@latest
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g figma-developer-mcp@0.11.0
+    npm install -g figma-developer-mcp@latest
 
 # Runtime stage
 FROM node:24-slim
@@ -38,6 +38,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         git \
+        git-lfs \
         curl \
         ca-certificates \
         dnsutils \
@@ -73,6 +74,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         xdg-utils \
         python3 \
         python-is-python3 \
+    && git lfs install --system \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user
@@ -136,11 +138,12 @@ RUN curl -LsSf https://astral.sh/uv/install.sh \
 # created root-owned and the agent user couldn't write to them.
 RUN mkdir -p \
         /home/agent/.claude \
+        /home/agent/.config/opencode \
         /home/agent/.local/share/opencode \
         /home/agent/.codex \
         /home/agent/.gemini \
         /home/agent/.cache/ms-playwright \
-    && chown -R 1001:1001 /home/agent/.claude /home/agent/.local /home/agent/.codex /home/agent/.gemini /home/agent/.cache
+    && chown -R 1001:1001 /home/agent/.claude /home/agent/.config /home/agent/.local /home/agent/.codex /home/agent/.gemini /home/agent/.cache
 
 # ~/.claude.json (project manifest, MCP servers, recent projects) lives at home root,
 # NOT inside ~/.claude/. Symlinking it into the .claude dir makes writes land in the

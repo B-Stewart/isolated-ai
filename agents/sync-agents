@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Sync canonical Claude Code agents (and skills) into harness config dirs.
+
+Canonical sources:
+  /workspace/agents/  — Claude Code-format .md files with YAML frontmatter
+                        (`name`, `description`, `model`, `tools`)
+  /workspace/skills/  — superpowers-style skill directories, each containing
+                        SKILL.md plus optional supporting files
+
+Outputs:
+  ~/.claude/agents/<file>.md            — copied verbatim
+  ~/.config/opencode/agents/<file>.md   — transformed:
+    * `name:` dropped (opencode derives identity from filename)
+    * `model:` remapped (`sonnet` -> `anthropic/claude-sonnet-4-6`, etc.)
+    * `tools: A, B` -> `permission: { edit, bash, webfetch: allow|deny }`
+    * `mode: subagent` added
+  ~/.claude/skills/<name>/...           — copied verbatim (recursive)
+
+Skills are not synced to opencode — opencode installs skills via its native
+plugin manager (opencode.json `plugin` array), not a filesystem directory.
+
+Run by devcontainer postStartCommand; safe to run manually. Always overwrites.
+"""
+import re
+import shutil
+import sys
+from pathlib import Path
+
+MODEL_MAP_OPENCODE = {
+    "haiku":  "anthropic/claude-haiku-4-5-20251001",
+    "sonnet": "anthropic/claude-sonnet-4-6",
+    "opus":   "anthropic/claude-opus-4-7",
+}
+
+# Claude Code tool name -> opencode permission category
+TOOL_PERMISSION_MAP = {
+    "Edit":      "edit",
+    "Write":     "edit",
+    "MultiEdit": "edit",
+    "Bash":      "bash",
+    "WebFetch":  "webfetch",
+    "WebSearch": "webfetch",
+}
+PERMISSION_CATEGORIES = sorted(set(TOOL_PERMISSION_MAP.values()))
+
+AGENTS_DIR       = Path(__file__).resolve().parent
+SKILLS_DIR       = AGENTS_DIR.parent / "skills"
+CLAUDE_AGENTS    = Path.home() / ".claude" / "agents"
+OPENCODE_AGENTS  = Path.home() / ".config" / "opencode" / "agents"
+CLAUDE_SKILLS    = Path.home() / ".claude" / "skills"
+
+FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
+
+
+def parse_frontmatter(text):
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return None, text
+    fm = {}
+    for line in m.group(1).splitlines():
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        fm[k.strip()] = v.strip()
+    return fm, m.group(2)
+
+
+def to_opencode(fm, body):
+    out = ["---", f"description: {fm.get('description', '')}", "mode: subagent"]
+
+    model = fm.get("model")
+    if model in MODEL_MAP_OPENCODE:
+        out.append(f"model: {MODEL_MAP_OPENCODE[model]}")
+
+    tools_str = fm.get("tools", "")
+    granted_tools = {t.strip() for t in tools_str.split(",") if t.strip()}
+    granted_perms = {TOOL_PERMISSION_MAP[t] for t in granted_tools if t in TOOL_PERMISSION_MAP}
+    if granted_tools:
+        out.append("permission:")
+        for cat in PERMISSION_CATEGORIES:
+            out.append(f"  {cat}: {'allow' if cat in granted_perms else 'deny'}")
+
+    out.append("---")
+    return "\n".join(out) + "\n" + body
+
+
+def sync_agents():
+    CLAUDE_AGENTS.mkdir(parents=True, exist_ok=True)
+    OPENCODE_AGENTS.mkdir(parents=True, exist_ok=True)
+
+    count = 0
+    for src in sorted(AGENTS_DIR.glob("*.md")):
+        if src.name.lower() == "readme.md":
+            continue
+        text = src.read_text()
+        fm, body = parse_frontmatter(text)
+        if fm is None:
+            print(f"agent skip {src.name}: no frontmatter", file=sys.stderr)
+            continue
+        (CLAUDE_AGENTS / src.name).write_text(text)
+        (OPENCODE_AGENTS / src.name).write_text(to_opencode(fm, body))
+        count += 1
+        print(f"agent synced: {src.name}")
+    return count
+
+
+def sync_skills():
+    if not SKILLS_DIR.is_dir():
+        return 0
+    CLAUDE_SKILLS.mkdir(parents=True, exist_ok=True)
+
+    count = 0
+    for src in sorted(SKILLS_DIR.iterdir()):
+        if not src.is_dir():
+            continue
+        if not (src / "SKILL.md").is_file():
+            print(f"skill skip {src.name}: no SKILL.md", file=sys.stderr)
+            continue
+        dst = CLAUDE_SKILLS / src.name
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+        count += 1
+        print(f"skill synced: {src.name}")
+    return count
+
+
+def main():
+    agents = sync_agents()
+    skills = sync_skills()
+    print(f"done — {agents} agent(s), {skills} skill(s)")
+
+
+if __name__ == "__main__":
+    main()

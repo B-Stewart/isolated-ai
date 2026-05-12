@@ -23,6 +23,12 @@
     "source=codex-auth,target=/home/agent/.codex,type=volume",
     "source=gemini-auth,target=/home/agent/.gemini,type=volume",
     "source=pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume"
+    // BYO AGENTS: uncomment the line below (and the leading comma) to replace this
+    // repo's /workspace/agents with your own canonical agent directory from the host.
+    // Files must be Claude Code .md format (name/description/model/tools frontmatter);
+    // sync-agents emits CC + opencode variants into the auth volumes on container start.
+    // Drop ",readonly" if you want to edit agents from inside the container.
+    // , "source=${localEnv:HOME}/.agentic/agents,target=/workspace/agents,type=bind,readonly"
   ],
   // Hardening profile.
   // for the rationale behind each flag.
@@ -32,7 +38,7 @@
   // iptables) is blocked by --cap-drop=ALL — three steps total:
   //   1. Comment out the "--cap-drop=ALL" line in runArgs.
   //   2. Uncomment the three "// FIREWALL:" lines in runArgs (targeted drops + NET_ADMIN).
-  //   3. Uncomment the "// FIREWALL:" postStartCommand line further down.
+  //   3. Uncomment the "// FIREWALL:" entry inside postStartCommand below.
   // The base image's README documents the corresponding standalone invocation.
   "runArgs": [
     "--cap-drop=ALL",
@@ -43,7 +49,15 @@
     "--pids-limit=4096",
     "--tmpfs=/tmp:rw,nosuid,exec,size=512m"
   ],
-  // FIREWALL: "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+  // postStartCommand entries run in parallel on every container start.
+  //   sync-agents: rewrites ~/.claude/agents/ and ~/.config/opencode/agents/ from
+  //                /workspace/agents (canonical Claude Code-format source). Always
+  //                overwrites — edit the canonical files in /workspace/agents, not
+  //                the generated copies.
+  "postStartCommand": {
+    "sync-agents": "python /workspace/agents/sync-agents"
+    // FIREWALL: , "firewall": "sudo /usr/local/bin/init-firewall.sh"
+  },
   // "postCreateCommand": "npm install",
   "customizations": {
     "vscode": {

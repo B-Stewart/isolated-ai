@@ -1,0 +1,17 @@
+{
+  "_comment": "Example PostToolUse hook: runs `npm run typecheck` after Claude edits TypeScript files. Drop this content into ~/.claude/settings.json (user-wide) or .claude/settings.json (project-only). Merge with existing settings — don't overwrite.",
+
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(jq -r '.tool_input.file_path // empty'); if echo \"$FILE\" | grep -qE '\\.(ts|tsx|mts|cts)$'; then npm run typecheck 2>&1; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

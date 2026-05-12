@@ -33,6 +33,28 @@ FROM braydens/agentic-base:latest
 
 And update your devcontainer configuration to point to it.
 
+## Agents, skills, and hooks in this repo
+
+This repo doubles as a working example of a cost-tiered SDLC agent setup for both Claude Code and OpenCode. The image itself ships none of this — you opt in by using this devcontainer as your starting point, or by mounting these directories into a downstream image.
+
+- **[`agents/`](agents/README.md)** — 8 custom subagents with per-agent model selection (Sonnet 4.6 for review/test/debug, Haiku 4.5 for security/docs/deps/PR/librarian). All written from scratch in this repo.
+- **[`skills/`](skills/README.md)** — 4 workflow-discipline skills **vendored verbatim from [obra/superpowers](https://github.com/obra/superpowers)** under the MIT license: `writing-plans`, `executing-plans`, `test-driven-development`, `systematic-debugging`. Copyright © 2025 Jesse Vincent. Full license text in [`skills/LICENSE.superpowers`](skills/LICENSE.superpowers). Only these four were cherry-picked; the dispatch/worktree skills from upstream are intentionally omitted.
+- **[`hooks/`](hooks/README.md)** — example PostToolUse hook (TypeScript typecheck after edits). Settings snippet to merge into `~/.claude/settings.json`, not a deployable file.
+
+### How the sync works
+
+[`agents/sync-agents`](agents/sync-agents) is a small Python script wired into [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) as a `postStartCommand`. On every container start it:
+
+1. Copies each `agents/*.md` to `~/.claude/agents/` verbatim.
+2. Transforms each into opencode format and writes to `~/.config/opencode/agents/` — drops `name:` (opencode derives identity from filename), remaps `model: sonnet` → `anthropic/claude-sonnet-4-6`, converts CC's `tools:` array to opencode's `permission:` object, adds `mode: subagent`.
+3. Recursively copies each `skills/*/` directory to `~/.claude/skills/`.
+
+Skills are **Claude Code only** — opencode installs skills via its own plugin manager (a `plugin` array entry in `opencode.json`), not a filesystem dir. If you want the vendored skills in opencode too, add `superpowers@git+https://github.com/obra/superpowers.git` to your `opencode.json` — note that pulls all 14 superpowers skills, not just our four.
+
+### Bring your own agents
+
+To use this image with your own canonical agent directory living on the host (instead of, or alongside, this repo's `agents/`), see the commented `BYO AGENTS:` block in [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) and the matching section in [`agents/README.md`](agents/README.md). The sync script picks up whatever lives at `/workspace/agents` — bind-mount your own dir there and it just works.
+
 ## Windows host caveats
 
 When the consumer's workspace is bind-mounted from a Windows path (the default for VS Code "Reopen in Container" on Windows + Docker Desktop), a few rough edges show up:

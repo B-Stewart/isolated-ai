@@ -19,7 +19,7 @@ Main session (Opus) orchestrates and implements. Subagents handle isolated speci
 
 Codebase search is handled by Claude Code's built-in `Explore` agent (Haiku) — no custom subagent needed.
 
-See `../skills/` for workflow-discipline skills (plan-first, TDD, systematic debugging) that complement this roster.
+See `../skills/` for workflow-discipline skills (plan-first, TDD, systematic debugging) — **vendored from [obra/superpowers](https://github.com/obra/superpowers) under MIT**, not authored here.
 
 ## How `sync-agents` works
 

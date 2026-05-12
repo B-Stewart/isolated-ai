@@ -1,5 +1,7 @@
 # Skills
 
+> **Attribution.** The four skills in this directory are vendored verbatim from [obra/superpowers](https://github.com/obra/superpowers) — MIT licensed, copyright © 2025 Jesse Vincent. Full license text in [`LICENSE.superpowers`](LICENSE.superpowers). We cherry-picked just these four (workflow discipline) and skipped the dispatch/worktree skills that conflict with our standing subagent roster.
+
 Workflow-discipline skills that complement the subagent roster in `../agents/`. Where agents are *specialists you delegate to*, skills are *rules you follow yourself*.
 
 ## What's here

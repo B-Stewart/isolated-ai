@@ -124,6 +124,13 @@ RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
        /home/agent/.local/bin/figma-developer-mcp \
        /home/agent/.local/bin/serena
 
+# Enable Corepack so `yarn` and `pnpm` shims exist on PATH. Done as root so the
+# shims land in /usr/local/bin (the agent user can't write there at runtime).
+# Actual package-manager binaries are fetched on demand into ~/.cache/node/corepack,
+# which is user-writable, so each container can pull whatever version a project's
+# `packageManager` field pins without rebuilding the image.
+RUN corepack enable
+
 # Install uv (Python tool manager) and serena (uv-installed MCP server). uv is a
 # standalone Rust binary so we don't need a Python interpreter at this layer; uv
 # fetches its own Python when serena's tool install asks for 3.13.
@@ -161,6 +168,35 @@ RUN chown root:root /usr/local/bin/init-firewall.sh \
 RUN echo 'agent ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh' \
     > /etc/sudoers.d/agent-firewall \
     && chmod 0440 /etc/sudoers.d/agent-firewall
+
+# Docker CLI + Compose v2 plugin for docker-outside-of-docker (DooD). No daemon
+# runs in this image — the container talks to the host daemon via a mounted
+# /var/run/docker.sock (see the devcontainer.json that consumes this image).
+#
+# DOCKER_GID controls the gid of the in-image `docker` group. It must match the
+# gid that owns the socket as it appears INSIDE the container. On Docker Desktop
+# (Windows/Mac) that's typically 0 (root) — Desktop relaxes the socket perms so
+# membership often isn't even required — but on a Linux host with native Docker
+# it's whatever the host's docker group gid is (commonly 999 or 998). Override
+# at build time if your host disagrees: `docker build --build-arg DOCKER_GID=998 …`.
+ARG DOCKER_GID=999
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg \
+        -o /etc/apt/keyrings/docker.asc \
+    && chmod a+r /etc/apt/keyrings/docker.asc \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+        > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        docker-ce-cli \
+        docker-compose-plugin \
+        docker-buildx-plugin \
+    && rm -rf /var/lib/apt/lists/* \
+    && ( groupadd --gid ${DOCKER_GID} docker 2>/dev/null \
+         || groupadd docker ) \
+    && usermod -aG docker agent
 
 USER agent
 WORKDIR /workspace

@@ -8,8 +8,18 @@
   // },
   "remoteUser": "agent",
   "containerUser": "agent",
-  "workspaceFolder": "/workspace",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  // Mount the workspace at the same path it has on the host. This matters for
+  // Docker-out-of-Docker: bind mounts in docker-compose.yml are resolved by the
+  // *host* daemon, so a `./data:/data` mount needs `$PWD` inside the container
+  // to be a path the host can actually see. Mounting at /workspace would make
+  // the host daemon look for /workspace/data, which doesn't exist on the host.
+  "workspaceFolder": "${localWorkspaceFolder}",
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind,consistency=cached",
+  // Give each repo a unique Compose project name so containers/networks/volumes
+  // from different repos using this pattern don't collide on the host daemon.
+  "containerEnv": {
+    "COMPOSE_PROJECT_NAME": "${localWorkspaceFolderBasename}"
+  },
   // "forwardPorts": [3000],
   // "portsAttributes": {
   //   "3000": { "label": "web" }

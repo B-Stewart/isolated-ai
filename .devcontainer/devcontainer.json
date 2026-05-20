@@ -1,5 +1,5 @@
 {
-  "name": "isolated-ai (agentic)",
+  "name": "isolated-ai",
   // Use the cloud image if you don't need customizations
   "image": "braydens/agentic-base:latest",
   // or custom docker file in folder with "Dockerfile"
@@ -27,12 +27,12 @@
   // Per-agent named auth volumes. Mount only the volumes for agents you actually use.
   // First-run login expected on first use of each agent.
   "mounts": [
-    "source=claude-auth,target=/home/agent/.claude,type=volume",
-    "source=opencode-auth,target=/home/agent/.local/share/opencode,type=volume",
-    "source=opencode-config,target=/home/agent/.config/opencode,type=volume",
-    "source=codex-auth,target=/home/agent/.codex,type=volume",
-    "source=gemini-auth,target=/home/agent/.gemini,type=volume",
-    "source=pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume",
+    "source=isolated-claude-auth,target=/home/agent/.claude,type=volume",
+    "source=isolated-opencode-auth,target=/home/agent/.local/share/opencode,type=volume",
+    "source=isolated-opencode-config,target=/home/agent/.config/opencode,type=volume",
+    "source=isolated-codex-auth,target=/home/agent/.codex,type=volume",
+    "source=isolated-gemini-auth,target=/home/agent/.gemini,type=volume",
+    "source=isolated-pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume",
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
   // Hardening profile.

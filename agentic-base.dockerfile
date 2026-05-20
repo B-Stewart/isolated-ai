@@ -78,10 +78,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user
-RUN groupadd --gid 1001 agent \
-    && useradd --uid 1001 --gid 1001 --create-home --shell /bin/bash agent \
+# node:24-slim ships with a `node` user at UID/GID 1000 — remove it so we can
+# reclaim 1000 for `agent` (matching the default Linux/WSL user UID).
+RUN userdel -r node 2>/dev/null || true \
+    && groupdel node 2>/dev/null || true \
+    && groupadd --gid 1000 agent \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash agent \
     && mkdir -p /home/agent/.local/bin \
-    && chown -R 1001:1001 /home/agent
+    && chown -R 1000:1000 /home/agent
 
 ENV HOME=/home/agent
 ENV PATH=/home/agent/.local/bin:${PATH}
@@ -114,7 +118,7 @@ RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
     && ln -sf /usr/local/bin/playwright-mcp /home/agent/.local/bin/playwright-mcp \
     && ln -sf /usr/local/bin/figma-developer-mcp /home/agent/.local/bin/figma-developer-mcp \
     && ln -sf /usr/local/bin/serena /home/agent/.local/bin/serena \
-    && chown -h 1001:1001 \
+    && chown -h 1000:1000 \
        /home/agent/.local/bin/claude \
        /home/agent/.local/bin/opencode \
        /home/agent/.local/bin/codex \
@@ -141,7 +145,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh \
 
 # Pre-create config dirs for the agents and Playwright. Docker's named-volume init
 # copies image-side ownership/perms into a fresh volume on first mount, so these
-# dirs must exist as 1001:1001 in the image — otherwise the volumes would be
+# dirs must exist as 1000:1000 in the image — otherwise the volumes would be
 # created root-owned and the agent user couldn't write to them.
 RUN mkdir -p \
         /home/agent/.claude \
@@ -150,14 +154,14 @@ RUN mkdir -p \
         /home/agent/.codex \
         /home/agent/.gemini \
         /home/agent/.cache/ms-playwright \
-    && chown -R 1001:1001 /home/agent/.claude /home/agent/.config /home/agent/.local /home/agent/.codex /home/agent/.gemini /home/agent/.cache
+    && chown -R 1000:1000 /home/agent/.claude /home/agent/.config /home/agent/.local /home/agent/.codex /home/agent/.gemini /home/agent/.cache
 
 # ~/.claude.json (project manifest, MCP servers, recent projects) lives at home root,
 # NOT inside ~/.claude/. Symlinking it into the .claude dir makes writes land in the
 # claude-auth volume so MCP registrations and project state persist across rebuilds.
 # Claude resolves the symlink at runtime; the target lives inside the mounted volume.
 RUN ln -sf /home/agent/.claude/.claude.json /home/agent/.claude.json \
-    && chown -h 1001:1001 /home/agent/.claude.json
+    && chown -h 1000:1000 /home/agent/.claude.json
 
 # Firewall script — root-owned, executable, dormant unless invoked
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh

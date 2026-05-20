@@ -22,7 +22,8 @@
     "source=opencode-config,target=/home/agent/.config/opencode,type=volume",
     "source=codex-auth,target=/home/agent/.codex,type=volume",
     "source=gemini-auth,target=/home/agent/.gemini,type=volume",
-    "source=pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume"
+    "source=pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume",
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
   // Hardening profile.
   // for the rationale behind each flag.
@@ -35,6 +36,7 @@
   //   3. Uncomment the "// FIREWALL:" postStartCommand line further down.
   // The base image's README documents the corresponding standalone invocation.
   "runArgs": [
+    "--label=com.docker.compose.project=agentic-isolated-ai",
     "--cap-drop=ALL",
     // FIREWALL: "--cap-drop=NET_RAW",
     // FIREWALL: "--cap-drop=SYS_PTRACE",
@@ -43,8 +45,10 @@
     "--pids-limit=4096",
     "--tmpfs=/tmp:rw,nosuid,exec,size=512m"
   ],
-  // FIREWALL: "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
-  // "postCreateCommand": "npm install",
+  "postCreateCommand": {
+    // "firewall": "sudo /usr/local/bin/init-firewall.sh",
+    // "deps": "npm install"
+  },
   "customizations": {
     "vscode": {
       "extensions": []

@@ -39,6 +39,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get install -y --no-install-recommends \
         git \
         git-lfs \
+        openssh-client \
         curl \
         ca-certificates \
         dnsutils \
@@ -75,6 +76,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3 \
         python-is-python3 \
     && git lfs install --system \
+    && rm -rf /var/lib/apt/lists/*
+
+# Playwright browser system deps (chromium + firefox + webkit). Baked at build
+# time because runtime `playwright install --with-deps` needs sudo, which the
+# hardened devcontainer (no-new-privileges) deliberately blocks.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && npx --yes playwright@latest install-deps \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user

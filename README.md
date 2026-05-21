@@ -139,7 +139,7 @@ Inspect connection state and auth with `opencode mcp list`; troubleshoot a misbe
 
 ### Notes
 
-- **Playwright browsers** aren't baked into the image (the apt block has only the runtime libs). Run `npx playwright install chromium` once after registering the MCP; the binaries land at `~/.cache/ms-playwright`, which is pre-created with `agent` ownership in the image. Mount a named volume there in your consumer if you want them to persist across rebuilds.
+- **Playwright browsers** aren't baked into the image, but the system libs for all three engines (Chromium, Firefox, WebKit) are — `playwright install-deps` runs at build time. Run `npx playwright install chromium` (or `firefox` / `webkit`) once after registering the MCP to fetch the browser binaries; they land at `~/.cache/ms-playwright`, which is pre-created with `agent` ownership in the image. Mount a named volume there in your consumer if you want them to persist across rebuilds. Do **not** run `npx playwright install --with-deps` inside the container — the `--with-deps` half needs sudo, which the hardened defaults (`no-new-privileges:true`) block by design. The deps are already there; you only need the binaries.
 - **Serena** may write per-user config to `~/.serena/`. That directory is *not* in the pre-create list and *not* on a named volume, so it gets reset on container rebuild. If you want it to persist, mount a `serena-config` volume at `/home/agent/.serena` in your consumer.
 - **Figma personal access token** lives in your Claude config (`~/.claude/settings.json`) via `claude mcp add -e`. Treat that volume as a credential store accordingly.
 

@@ -1,5 +1,4 @@
 {
-  // Name for VS Code, shown in the bottom left of the window when the container is running
   "name": "isolated-ai",
   // Use the cloud image if you don't need customizations
   "image": "braydens/agentic-base:latest",
@@ -9,8 +8,15 @@
   // },
   "remoteUser": "agent",
   "containerUser": "agent",
+  // Mount the workspace at the same path it has on the host. This matters for
+  // Docker-out-of-Docker: bind mounts in docker-compose.yml are resolved by the
+  // *host* daemon, so a `./data:/data` mount needs `$PWD` inside the container
+  // to be a path the host can actually see. Mounting at /workspace would make
+  // the host daemon look for /workspace/data, which doesn't exist on the host.
   "workspaceFolder": "${localWorkspaceFolder}",
   "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind,consistency=cached",
+  // Give each repo a unique Compose project name so containers/networks/volumes
+  // from different repos using this pattern don't collide on the host daemon.
   "containerEnv": {
     "COMPOSE_PROJECT_NAME": "${localWorkspaceFolderBasename}"
   },
@@ -18,6 +24,8 @@
   // "portsAttributes": {
   //   "3000": { "label": "web" }
   // },
+  // Per-agent named auth volumes. Mount only the volumes for agents you actually use.
+  // First-run login expected on first use of each agent.
   "mounts": [
     "source=isolated-claude-auth,target=/home/agent/.claude,type=volume",
     "source=isolated-opencode-auth,target=/home/agent/.local/share/opencode,type=volume",
@@ -27,16 +35,28 @@
     "source=isolated-pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume",
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
+  // Hardening profile.
+  // for the rationale behind each flag.
+  //
+  // FIREWALL: this devcontainer ships with the egress firewall OFF. Enabling it requires
+  // loosening the cap-drop policy because sudo (which the firewall script needs to call
+  // iptables) is blocked by --cap-drop=ALL — three steps total:
+  //   1. Comment out the "--cap-drop=ALL" line in runArgs.
+  //   2. Uncomment the three "// FIREWALL:" lines in runArgs (targeted drops + NET_ADMIN).
+  //   3. Uncomment the "// FIREWALL:" postStartCommand line further down.
+  // The base image's README documents the corresponding standalone invocation.
   "runArgs": [
-    // Name shown in docker tagged on the container, useful for debugging and visibility
     "--label=com.docker.compose.project=agentic-isolated-ai",
-    // Some optional hardening flags
     "--cap-drop=ALL",
+    // FIREWALL: "--cap-drop=NET_RAW",
+    // FIREWALL: "--cap-drop=SYS_PTRACE",
+    // FIREWALL: "--cap-add=NET_ADMIN",
     "--security-opt=no-new-privileges:true",
     "--pids-limit=4096",
     "--tmpfs=/tmp:rw,nosuid,exec"
   ],
   "postCreateCommand": {
+    // "firewall": "sudo /usr/local/bin/init-firewall.sh",
     // "deps": "npm install"
   },
   "customizations": {

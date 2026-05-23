@@ -42,6 +42,15 @@ When the consumer's workspace is bind-mounted from a Windows path (the default f
 
 The fully-correct fix is **WSL2-native**: clone the consumer repo into your WSL2 distro (e.g., `~/dev/...` inside Ubuntu/Debian) and reopen the devcontainer from there. The bind mount becomes Linux-on-Linux — inotify works, mtimes are stable, file I/O is fast. This is the recommended setup for daily development on Windows hosts; the Windows-side bind mount works for casual or one-off use but expect the caveats above. VS Code handles most of this natively by using the "Clone Repository in Container Volume" command.
 
+## Mounts
+  // Mount the workspace at the same path it has on the host. This matters for
+  // Docker-out-of-Docker: bind mounts in docker-compose.yml are resolved by the
+  // *host* daemon, so a `./data:/data` mount needs `$PWD` inside the container
+  // to be a path the host can actually see. Mounting at /workspace would make
+  // the host daemon look for /workspace/data, which doesn't exist on the host.
+  // Give each repo a unique Compose project name so containers/networks/volumes
+  // from different repos using this pattern don't collide on the host daemon.
+
 ## Git and Git LFS
 
 `git` and `git-lfs` are baked into the image, with LFS filters registered system-wide (`git lfs install --system`). Any repo with LFS-tracked files works in `/workspace` without per-user setup — `git clone`, `git pull`, and `git push` handle large files transparently.

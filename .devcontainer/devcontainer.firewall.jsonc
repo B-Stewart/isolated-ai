@@ -30,8 +30,6 @@
     "source=isolated-claude-auth,target=/home/agent/.claude,type=volume",
     "source=isolated-opencode-auth,target=/home/agent/.local/share/opencode,type=volume",
     "source=isolated-opencode-config,target=/home/agent/.config/opencode,type=volume",
-    "source=isolated-codex-auth,target=/home/agent/.codex,type=volume",
-    "source=isolated-gemini-auth,target=/home/agent/.gemini,type=volume",
     "source=isolated-pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume",
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],

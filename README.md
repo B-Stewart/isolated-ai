@@ -1,79 +1,24 @@
 # isolated-ai
 
-Local-only Docker base image hosting four coding agents — Claude Code, OpenCode, Codex CLI, Gemini CLI — for use as a Dev Container base or as a standalone hardened agent host.
+A repo to hold my current agentic developer workflow revolving around Docker isolation. Included is a base image hosting 2 coding agents (maybe more to come if I start using them) — Claude Code, OpenCode — for use as a Dev Container base or as a standalone host with optional hardening flags.
 
 Image tag: `braydens/agentic-base:latest`
 
 ## Build
 
+Rebuild whenever you want fresher agent versions as everything is pinned to @latest.
+
 ```
 docker build -f agentic-base.dockerfile -t braydens/agentic-base:latest .
 ```
 
-Rebuild whenever you want fresher agent versions as everything is pinned to @latest.
-
 ## Push
 
-If you want to push the new version to docker hub
+If you want to push the new version to docker hub:
 
 ```
 docker push braydens/agentic-base:latest
 ```
-
-## Use as a Dev Container base
-
-You can use this project's [devcontainer.json](.devcontainer/devcontainer.json) as a starting point for your workspace.
-
-If you need extras in your project's specific docker file you can create a custom docker file that extends it in `.devcontainer/Dockerfile`:
-
-```dockerfile
-FROM braydens/agentic-base:latest
-# project-specific layers (Bun, env vars, etc.)
-```
-
-And update your devcontainer configuration to point to it.
-
-## Windows host caveats
-
-When the consumer's workspace is bind-mounted from a Windows path (the default for VS Code "Reopen in Container" on Windows + Docker Desktop), a few rough edges show up:
-
-- **File watchers don't fire across the bind mount.** Linux's `inotify` doesn't propagate from Windows-side file changes. Tools running inside the container — Vite's HMR watcher, Nx's project-graph file watcher, etc. — won't notice when you save files in the editor. The fix is to put each tool in polling mode (e.g., `server.watch.usePolling = true` in `vite.config.*`). VS Code's own editor-to-container file sync uses a separate mechanism and works fine.
-- **`node_modules` reads are slower than they need to be** because every `require()` resolves through the WSL2 file translation layer.
-
-The fully-correct fix is **WSL2-native**: clone the consumer repo into your WSL2 distro (e.g., `~/dev/...` inside Ubuntu/Debian) and reopen the devcontainer from there. The bind mount becomes Linux-on-Linux — inotify works, mtimes are stable, file I/O is fast. This is the recommended setup for daily development on Windows hosts; the Windows-side bind mount works for casual or one-off use but expect the caveats above. VS Code handles most of this natively by using the "Clone Repository in Container Volume" command.
-
-## Mounts
-  // Mount the workspace at the same path it has on the host. This matters for
-  // Docker-out-of-Docker: bind mounts in docker-compose.yml are resolved by the
-  // *host* daemon, so a `./data:/data` mount needs `$PWD` inside the container
-  // to be a path the host can actually see. Mounting at /workspace would make
-  // the host daemon look for /workspace/data, which doesn't exist on the host.
-  // Give each repo a unique Compose project name so containers/networks/volumes
-  // from different repos using this pattern don't collide on the host daemon.
-
-## Git and Git LFS
-
-`git` and `git-lfs` are baked into the image, with LFS filters registered system-wide (`git lfs install --system`). Any repo with LFS-tracked files works in `/workspace` without per-user setup — `git clone`, `git pull`, and `git push` handle large files transparently.
-
-LFS blobs land under `.git/lfs/objects`. On Windows bind-mounted workspaces they pay the same WSL2 translation cost flagged above, so LFS-heavy repos are a good candidate for VS Code's **Clone Repository in (Named) Container Volume** flow — the `.git` tree lives entirely in a Docker volume on the Linux side and LFS smudge/clean operations run at native speed.
-
-### Auth from inside the container (VS Code path)
-
-When you "Reopen in Container" from VS Code, the Dev Containers extension forwards your host's git credentials automatically — no devcontainer.json changes needed:
-
-- **SSH** — your host's running SSH agent socket is mounted in and `SSH_AUTH_SOCK` is set. Keys never enter the container; signing happens on the host.
-- **HTTPS** — a credential helper inside the container proxies back to your host's credential manager (Windows Credential Manager, macOS Keychain, libsecret on Linux). Tokens stored by `gh auth` on the host, GitLab/Bitbucket creds, etc. are all reachable.
-- **Identity** — `user.name` and `user.email` from your host git config are injected so commits carry the correct author.
-
-The hardening flags (`--cap-drop=ALL`, `no-new-privileges`) don't interfere — credential forwarding rides on a socket mount, not a Linux capability.
-
-### Auth outside VS Code (standalone runs)
-
-When you launch the container directly via `docker run` (see "Standalone hardened use" below), VS Code's forwarding isn't in play. Options, easiest first:
-
-- **Forward an SSH agent socket manually** — `-v "${SSH_AUTH_SOCK}:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent` (Linux/macOS host). Keys stay on the host.
-- **Mount `~/.ssh` read-only** — simplest, but exposes the key files to the container; only acceptable for trusted workloads.
-- **Add the `gh` CLI to your downstream image** — not pre-installed (keeps the base lean). Mount a persistent auth volume, run `gh auth login` once, then `gh auth setup-git` configures git's HTTPS credential helper inside the container. `.devcontainer/devcontainer.json` has a commented-out example mount (`gh-auth` → `/home/agent/.config/gh`) showing the pattern.
 
 ## Pre-installed MCP servers
 
@@ -152,6 +97,68 @@ Inspect connection state and auth with `opencode mcp list`; troubleshoot a misbe
 - **Serena** may write per-user config to `~/.serena/`. That directory is *not* in the pre-create list and *not* on a named volume, so it gets reset on container rebuild. If you want it to persist, mount a `serena-config` volume at `/home/agent/.serena` in your consumer.
 - **Figma personal access token** lives in your Claude config (`~/.claude/settings.json`) via `claude mcp add -e`. Treat that volume as a credential store accordingly.
 
+## Run modes
+
+| Mode | cap-drop ALL | cap-add NET_ADMIN | Firewall | Use case |
+|---|---|---|---|---|
+| Devcontainer (default) | yes | no | off | VS Code attached, dev workflow |
+| Devcontainer + firewall | partial | yes | on | development with egress allowlist |
+| Standalone hardened | yes | no | off | one-shot agent run, max isolation |
+| Standalone + firewall | partial | yes | on | one-shot, egress-controlled |
+
+## Use as a Dev Container base
+
+You can use this project's [devcontainer.json](.devcontainer/devcontainer.json) as a starting point for your workspace.
+
+If you need extras in your project's specific docker file you can create a custom docker file that extends it in `.devcontainer/Dockerfile`:
+
+```dockerfile
+FROM braydens/agentic-base:latest
+# project-specific layers (Bun, env vars, etc.)
+```
+
+And update your devcontainer configuration to point to it.
+
+### Windows host caveats
+
+When the consumer's workspace is bind-mounted from a Windows path (the default for VS Code "Reopen in Container" on Windows + Docker Desktop), a few rough edges show up:
+
+- **File watchers don't fire across the bind mount.** Linux's `inotify` doesn't propagate from Windows-side file changes. Tools running inside the container — Vite's HMR watcher, Nx's project-graph file watcher, etc. — won't notice when you save files in the editor. The fix is to put each tool in polling mode (e.g., `server.watch.usePolling = true` in `vite.config.*`). VS Code's own editor-to-container file sync uses a separate mechanism and works fine.
+- **`node_modules` reads are slower than they need to be** because every `require()` resolves through the WSL2 file translation layer.
+
+The ideal solution is is **WSL2-native**: clone the consumer repo into your WSL2 distro (e.g., `~/dev/...` inside Ubuntu/Debian) and reopen the devcontainer from there. The bind mount becomes Linux-on-Linux — inotify works, mtimes are stable, file I/O is fast. This is the recommended setup for daily development on Windows hosts; the Windows-side bind mount works for casual or one-off use but expect the caveats above. 
+
+You can also "Clone Repository in Container Volume" VS Code handles most of this natively but this makes the files not live outside the container which can be hard to work with depending on your workflow.
+
+### Workspace path and Docker-out-of-Docker
+
+The default `devcontainer.json` mounts the workspace at the **same path inside the container as it has on the host** (`workspaceFolder` and `workspaceMount` both use `${localWorkspaceFolder}`) rather than the conventional `/workspace`. This matters as soon as you do Docker-out-of-Docker — running `docker` or `docker compose` from inside the container against the host's daemon via the mounted `/var/run/docker.sock`.
+
+Bind mounts in a `docker-compose.yml` are resolved by the daemon that runs them, which here is the **host** daemon. A relative mount like `./data:/data` expands to `$PWD/data` inside the container, and the host daemon then looks for that exact path on the host filesystem. If the container's `$PWD` were `/workspace`, the host would look for `/workspace/data` and find nothing. Mounting at the original host path keeps `$PWD` valid on both sides and lets compose stacks defined inside the container "just work" against the host daemon.
+
+The same setup also sets `COMPOSE_PROJECT_NAME` to the workspace folder's basename, so containers, networks, and volumes created by compose stacks from different repos using this pattern don't collide on the shared host daemon.
+
+### Git and Git LFS
+
+`git` and `git-lfs` are baked into the image, with LFS filters registered system-wide (`git lfs install --system`). Any repo with LFS-tracked files works in `/workspace` without per-user setup — `git clone`, `git pull`, and `git push` handle large files transparently.
+
+LFS blobs land under `.git/lfs/objects`. On Windows bind-mounted workspaces they pay the same WSL2 translation cost flagged above, so LFS-heavy repos are a good candidate for VS Code's **Clone Repository in (Named) Container Volume** flow — the `.git` tree lives entirely in a Docker volume on the Linux side and LFS smudge/clean operations run at native speed.
+
+### Auth from inside the container (VS Code path)
+
+When you "Reopen in Container" from VS Code, the Dev Containers extension forwards your host's git credentials automatically — no devcontainer.json changes needed:
+
+- **SSH** — your host's running SSH agent socket is mounted in and `SSH_AUTH_SOCK` is set. Keys never enter the container; signing happens on the host.
+- **HTTPS** — a credential helper inside the container proxies back to your host's credential manager (Windows Credential Manager, macOS Keychain, libsecret on Linux).
+- **Identity** — `user.name` and `user.email` from your host git config are injected so commits carry the correct author.
+
+### Auth outside VS Code (standalone runs)
+
+When you launch the container directly via `docker run` (see "Standalone hardened use" below), VS Code's forwarding isn't in play. Options, easiest first:
+
+- **Forward an SSH agent socket manually** — `-v "${SSH_AUTH_SOCK}:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent` (Linux/macOS host). Keys stay on the host.
+- **Mount `~/.ssh` read-only** — simplest, but exposes the key files to the container; only acceptable for trusted workloads.
+
 ## Standalone hardened use
 
 The image is neutral — no `ENTRYPOINT`, no `CMD`. Invoke the agent you want explicitly.
@@ -194,16 +201,9 @@ $dockerArgs = @(
 docker run @dockerArgs
 ```
 
-## Run modes
-
-| Mode | cap-drop ALL | cap-add NET_ADMIN | Firewall | Use case |
-|---|---|---|---|---|
-| Devcontainer (default) | yes | no | off | VS Code attached, dev workflow |
-| Devcontainer + firewall | partial | yes | on | development with egress allowlist |
-| Standalone hardened | yes | no | off | one-shot agent run, max isolation |
-| Standalone + firewall | partial | yes | on | one-shot, egress-controlled |
-
 ## Firewall allowlist
+
+`devconatiner.firewall.json` holds the `devcontainer.json` for use with the firewall
 
 `init-firewall.sh` allowlists egress to:
 
@@ -226,5 +226,5 @@ CDN-backed targets (npm, GitHub objects) rotate IPs over hours/days. If a long-l
 - `--cap-drop=ALL` — drops all Linux capabilities. Casualties: `ping`, `traceroute`, cross-process ptrace.
 - `--security-opt=no-new-privileges:true` — blocks setuid/setgid escalation.
 - `--pids-limit=4096` — fork-bomb mitigation, sized for parallel builds.
-- `--tmpfs=/tmp:rw,noexec,nosuid,size=512m` — ephemeral `/tmp`, no executing dropped binaries, capped size.
+- `--tmpfs=/tmp:rw,noexec,nosuid,size=512m` — ephemeral `/tmp`, no executing dropped binaries, capped size (optional, defaults to half RAM so might be unnecessary)
 - `--cap-add=NET_ADMIN` — required only when running `init-firewall.sh`. Mutually exclusive with `--cap-drop=ALL`.

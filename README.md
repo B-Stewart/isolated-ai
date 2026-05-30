@@ -45,17 +45,18 @@ mkdir -p ~/.claude ~/.config/opencode ~/.local/share/opencode ~/.config/rtk ~/.l
 touch ~/.claude.json
 ```
 
-**3. Install the Playwright skills.** Runs inside a throwaway container so you don't need Node + npm on the host; the skills land in your bind-mounted `~/.claude/skills/` (and `~/.config/opencode/` if the installer targets it):
+**3. Install the Playwright skills.** Runs inside a throwaway container so you don't need Node + npm on the host; the skills land in your bind-mounted `~/.claude/skills/` (and `~/.config/opencode/` if the installer targets it). The `playwright-cli install --skills` step also fetches browser binaries as a side effect, so mount the shared `isolated-pw-browsers` named volume here too — otherwise the download lands in a container layer that's discarded with `--rm` and the dev container has to re-download on first attach:
 
 ```bash
 docker run --rm \
   -v "$HOME/.claude:/home/agent/.claude" \
   -v "$HOME/.config/opencode:/home/agent/.config/opencode" \
+  -v isolated-pw-browsers:/home/agent/.cache/ms-playwright \
   braydens/agentic-base:latest \
   playwright-cli install --skills
 ```
 
-Re-run the same command later to update skills.
+Re-run the same command later to update skills; subsequent runs reuse anything already in the cache volume.
 
 **4. Register the MCP servers.** Once is enough — registrations persist in your host `~/.claude.json` and every container plus your native `claude` will see them:
 
@@ -101,8 +102,10 @@ docker run --rm \
   -v "$HOME/.config/rtk:/home/agent/.config/rtk" \
   -v "$HOME/.local/share/rtk:/home/agent/.local/share/rtk" \
   braydens/agentic-base:latest \
-  rtk init -g
+  rtk init -g --auto-patch
 ```
+
+`--auto-patch` skips the interactive "Patch existing settings.json? [y/N]" prompt — without it, `rtk init` detects non-interactive stdin (which the throwaway container always is) and defaults to `N`, leaving the hook *not* installed.
 
 The hook calls `rtk` on `PATH`. In the base image that's `/usr/local/bin/rtk`. **Caveat:** if you also run `claude` natively on the WSL host, the same hook fires there too — install RTK on the host (`curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh`) or the hook will error on every tool call. Undo at any time with `rtk init -g --uninstall` (same throwaway-container shape).
 
@@ -135,7 +138,13 @@ and update your `devcontainer.json` to build from it.
 - **HTTPS** — an in-container credential helper proxies to your host credential manager (Windows Credential Manager, macOS Keychain, libsecret on Linux).
 - **Identity** — host `user.name`/`user.email` get injected so commits carry the right author.
 
-**Firewall variant.** For egress allowlisting, use [`devcontainer.firewall.jsonc`](.devcontainer/devcontainer.firewall.jsonc) instead of the default. See [Firewall allowlist](#firewall-allowlist) for what's allowed and how to add hosts.
+**Firewall variant.** For egress allowlisting, use [`devcontainer.firewall.jsonc`](.devcontainer/devcontainer.firewall.jsonc) instead of the default. The variant ships with the firewall toggles **present but off** so it diffs cleanly against the default — flip them on with three edits:
+
+1. Comment out `"--cap-drop=ALL"` in `runArgs` (incompatible with `NET_ADMIN`).
+2. Uncomment the three `// FIREWALL:` lines in `runArgs` (`NET_RAW` + `SYS_PTRACE` drops + `NET_ADMIN` add).
+3. Uncomment the `// FIREWALL:` line in `postCreateCommand` (runs `init-firewall.sh` via sudo on container create).
+
+See [Firewall allowlist](#firewall-allowlist) for what's allowed and how to add hosts.
 
 ### Use as a standalone container
 
@@ -262,6 +271,8 @@ The Playwright browser cache (`~/.cache/ms-playwright/`) stays on a named volume
 **UID alignment.** The container's `agent` user is UID/GID 1000. On WSL the default user is also 1000, so the bind mount needs no `chown` dance. If your WSL user is on a different UID, `id -u` will tell you — align the host user to 1000 or open an issue to add a `--build-arg`.
 
 **What's gitignore-able.** Treat the host paths as part of your dotfiles. `~/.claude/settings.json`, `~/.claude/skills/`, `~/.claude/commands/` are good candidates for versioning. `~/.claude.json` and anything that holds OAuth tokens or `FIGMA_API_KEY` values should stay out of git.
+
+**Belt-and-suspenders for the bind-mount sources (`initializeCommand`).** When a bind-mount source path doesn't exist on the host, the Docker daemon auto-creates it — but as root, since dockerd runs as root, leaving the container's `agent` user unable to write into the supposed config dir. For the `~/.claude.json` file-bind specifically, Docker can't tell file-vs-dir intent and will create it as an empty *directory*, which silently breaks both agents. Both devcontainer variants set `initializeCommand` to `mkdir -p` the dirs and `touch ~/.claude.json` on the host *before* mounts resolve — so even if you skipped first-run §step 2, the devcontainer attach won't leave you with root-owned auto-created paths. The standalone `docker run` invocations below have no such safety net, so for those the first-run mkdir is still required.
 
 ### Playwright — CLI + skills, not MCP
 

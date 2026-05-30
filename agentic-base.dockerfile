@@ -153,14 +153,32 @@ RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/in
 ENV UV_TOOL_DIR=/opt/uv-tools
 ENV UV_TOOL_BIN_DIR=/usr/local/bin
 
-# Graphify — codebase-to-knowledge-graph (PyPI package is `graphifyy`, CLI is `graphify`).
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv tool install graphifyy
-
-# spec-kit — Spec-Driven Development toolkit from GitHub. Installed from git
-# HEAD to match the @latest pattern used for the npm-installed agents above.
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+# Graphify (PyPI: `graphifyy`, CLI: `graphify`) + spec-kit (CLI: `specify`).
+# spec-kit isn't published to PyPI by the upstream maintainer (the `specify-cli`
+# name on PyPI is owned by an unrelated third party), so install from git. To
+# avoid pulling unstable `.devN` builds from HEAD, the latest published release
+# tag is resolved from the GitHub API at build time — matches the @latest
+# pattern used by the npm/uv installs above; rebuild to pick up new releases.
+#
+# `build-essential` + `python3-dev` are installed transiently for this RUN
+# only and purged at the end — graphifyy pulls `tree-sitter-dm`, which ships
+# no Linux wheels and must compile its C extension against Python.h at install
+# time. The compiled .so lives inside the venv, so neither the C toolchain
+# nor the dev headers are needed at runtime; system `python3` (already
+# installed above) remains for the venvs to link against.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,target=/root/.cache/uv \
+    apt-get update \
+    && apt-get install -y --no-install-recommends build-essential python3-dev \
+    && uv tool install graphifyy \
+    && SPEC_KIT_TAG=$(curl -fsSL https://api.github.com/repos/github/spec-kit/releases/latest \
+        | grep -m1 '"tag_name"' | cut -d'"' -f4) \
+    && [ -n "$SPEC_KIT_TAG" ] \
+    && uv tool install specify-cli \
+        --from "git+https://github.com/github/spec-kit.git@${SPEC_KIT_TAG}" \
+    && apt-get purge -y --auto-remove build-essential python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Pre-create the Playwright browser cache dir. Kept as a named volume in the
 # consumer devcontainer (browsers are bulky and not user-edited), so image-side

@@ -24,12 +24,16 @@
   // "portsAttributes": {
   //   "3000": { "label": "web" }
   // },
-  // Per-agent named auth volumes. Mount only the volumes for agents you actually use.
-  // First-run login expected on first use of each agent.
+  // Agent config and auth bind-mounted from the host so containerized and
+  // native (host-side) Claude/OpenCode share one source of truth. Requires the
+  // host paths to exist with the right ownership before first launch — see the
+  // base image README for the one-time setup. Playwright browsers stay on a
+  // named volume; they're bulky binaries, not user-edited config.
   "mounts": [
-    "source=isolated-claude-auth,target=/home/agent/.claude,type=volume",
-    "source=isolated-opencode-auth,target=/home/agent/.local/share/opencode,type=volume",
-    "source=isolated-opencode-config,target=/home/agent/.config/opencode,type=volume",
+    "source=${localEnv:HOME}/.claude,target=/home/agent/.claude,type=bind",
+    "source=${localEnv:HOME}/.claude.json,target=/home/agent/.claude.json,type=bind",
+    "source=${localEnv:HOME}/.config/opencode,target=/home/agent/.config/opencode,type=bind",
+    "source=${localEnv:HOME}/.local/share/opencode,target=/home/agent/.local/share/opencode,type=bind",
     "source=isolated-pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume",
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
@@ -54,7 +58,19 @@
     "--tmpfs=/tmp:rw,nosuid,exec"
   ],
   "postCreateCommand": {
-    // "firewall": "sudo /usr/local/bin/init-firewall.sh",
+    // FIREWALL: "firewall": "sudo /usr/local/bin/init-firewall.sh",
+    // Auto-install the Chromium revision pinned by the project's own Playwright
+    // version, so day-to-day use never hits a "browser not found" prompt. Runs
+    // only if package.json mentions playwright; idempotent — re-runs are no-ops
+    // when the matching revision is already in the pw-browsers cache.
+    //
+    // FIREWALL caveat: registry.npmjs.org is in the default allowlist but the
+    // Playwright browser CDN (cdn.playwright.dev) is not. With the firewall on,
+    // either add `-e FIREWALL_EXTRA_HOSTS=cdn.playwright.dev` to runArgs or run
+    // this step with the firewall off (e.g. install browsers once on a non-FW
+    // attach, then enable FW). postCreateCommand keys run in parallel, so
+    // ordering against the firewall key isn't guaranteed regardless.
+    "playwright-browsers": "if [ -f package.json ] && grep -q '\"playwright\"' package.json; then npx --yes playwright install chromium; fi"
     // "deps": "npm install"
   },
   "customizations": {

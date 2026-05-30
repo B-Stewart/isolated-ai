@@ -10,16 +10,10 @@ RUN --mount=type=cache,target=/root/.npm \
     npm install -g opencode-ai@latest
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @openai/codex@latest
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @google/gemini-cli@latest
-
-RUN --mount=type=cache,target=/root/.npm \
     npm install -g @upstash/context7-mcp@latest
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @playwright/mcp@latest
+    npm install -g @playwright/cli@latest
 
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g figma-developer-mcp@latest
@@ -28,7 +22,7 @@ RUN --mount=type=cache,target=/root/.npm \
 FROM node:24-slim
 
 LABEL org.opencontainers.image.title="agentic-base" \
-      org.opencontainers.image.description="Local-only base image hosting Claude Code, OpenCode, Codex, and Gemini CLI for use as a devcontainer base or standalone agent host." \
+      org.opencontainers.image.description="Local-only base image hosting Claude Code and OpenCode for use as a devcontainer base or standalone agent host." \
       org.opencontainers.image.source="https://github.com/local/isolated-ai"
 
 # System deps. Cache mounts on apt to keep rebuilds fast.
@@ -113,30 +107,22 @@ COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 # claude.exe is the real Linux launcher shipped by @anthropic-ai/claude-code, not a Windows artifact.
 RUN ln -sf ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/local/bin/claude \
     && ln -sf ../lib/node_modules/opencode-ai/bin/opencode /usr/local/bin/opencode \
-    && ln -sf ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
-    && ln -sf ../lib/node_modules/@google/gemini-cli/bundle/gemini.js /usr/local/bin/gemini \
     && ln -sf ../lib/node_modules/@upstash/context7-mcp/dist/index.js /usr/local/bin/context7-mcp \
-    && ln -sf ../lib/node_modules/@playwright/mcp/cli.js /usr/local/bin/playwright-mcp \
+    && ln -sf ../lib/node_modules/@playwright/cli/playwright-cli.js /usr/local/bin/playwright-cli \
     && ln -sf ../lib/node_modules/figma-developer-mcp/dist/bin.js /usr/local/bin/figma-developer-mcp
 
 # Symlink agent bins into the user's local bin
 RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
     && ln -sf /usr/local/bin/opencode /home/agent/.local/bin/opencode \
-    && ln -sf /usr/local/bin/codex /home/agent/.local/bin/codex \
-    && ln -sf /usr/local/bin/gemini /home/agent/.local/bin/gemini \
     && ln -sf /usr/local/bin/context7-mcp /home/agent/.local/bin/context7-mcp \
-    && ln -sf /usr/local/bin/playwright-mcp /home/agent/.local/bin/playwright-mcp \
+    && ln -sf /usr/local/bin/playwright-cli /home/agent/.local/bin/playwright-cli \
     && ln -sf /usr/local/bin/figma-developer-mcp /home/agent/.local/bin/figma-developer-mcp \
-    && ln -sf /usr/local/bin/serena /home/agent/.local/bin/serena \
     && chown -h 1000:1000 \
        /home/agent/.local/bin/claude \
        /home/agent/.local/bin/opencode \
-       /home/agent/.local/bin/codex \
-       /home/agent/.local/bin/gemini \
        /home/agent/.local/bin/context7-mcp \
-       /home/agent/.local/bin/playwright-mcp \
-       /home/agent/.local/bin/figma-developer-mcp \
-       /home/agent/.local/bin/serena
+       /home/agent/.local/bin/playwright-cli \
+       /home/agent/.local/bin/figma-developer-mcp
 
 # Enable Corepack so `yarn` and `pnpm` shims exist on PATH. Done as root so the
 # shims land in /usr/local/bin (the agent user can't write there at runtime).
@@ -145,33 +131,19 @@ RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
 # `packageManager` field pins without rebuilding the image.
 RUN corepack enable
 
-# Install uv (Python tool manager) and serena (uv-installed MCP server). uv is a
-# standalone Rust binary so we don't need a Python interpreter at this layer; uv
-# fetches its own Python when serena's tool install asks for 3.13.
+# Install uv (Python tool manager). Standalone Rust binary; fetches its own
+# Python on demand when projects request a specific interpreter.
 RUN curl -LsSf https://astral.sh/uv/install.sh \
-    | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh \
-    && UV_TOOL_BIN_DIR=/usr/local/bin UV_TOOL_DIR=/usr/local/uv-tools \
-       uv tool install -p 3.13 serena-agent@1.2.0 --prerelease=allow
+    | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
 
-# Pre-create config dirs for the agents and Playwright. Docker's named-volume init
-# copies image-side ownership/perms into a fresh volume on first mount, so these
-# dirs must exist as 1000:1000 in the image — otherwise the volumes would be
-# created root-owned and the agent user couldn't write to them.
-RUN mkdir -p \
-        /home/agent/.claude \
-        /home/agent/.config/opencode \
-        /home/agent/.local/share/opencode \
-        /home/agent/.codex \
-        /home/agent/.gemini \
-        /home/agent/.cache/ms-playwright \
-    && chown -R 1000:1000 /home/agent/.claude /home/agent/.config /home/agent/.local /home/agent/.codex /home/agent/.gemini /home/agent/.cache
-
-# ~/.claude.json (project manifest, MCP servers, recent projects) lives at home root,
-# NOT inside ~/.claude/. Symlinking it into the .claude dir makes writes land in the
-# claude-auth volume so MCP registrations and project state persist across rebuilds.
-# Claude resolves the symlink at runtime; the target lives inside the mounted volume.
-RUN ln -sf /home/agent/.claude/.claude.json /home/agent/.claude.json \
-    && chown -h 1000:1000 /home/agent/.claude.json
+# Pre-create the Playwright browser cache dir. Kept as a named volume in the
+# consumer devcontainer (browsers are bulky and not user-edited), so image-side
+# ownership/perms must exist as 1000:1000 for Docker's volume init to honor them.
+# Agent config dirs (~/.claude, ~/.config/opencode, ~/.local/share/opencode) are
+# intentionally NOT pre-created here — they're bind-mounted from the host so
+# config and auth state live alongside the user's native CLI installs.
+RUN mkdir -p /home/agent/.cache/ms-playwright \
+    && chown -R 1000:1000 /home/agent/.cache
 
 # Firewall script — root-owned, executable, dormant unless invoked
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh

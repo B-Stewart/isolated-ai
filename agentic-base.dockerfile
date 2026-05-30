@@ -39,6 +39,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         openssh-client \
         curl \
         ca-certificates \
+        unzip \
         dnsutils \
         sudo \
         iptables \
@@ -150,6 +151,14 @@ RUN curl -LsSf https://astral.sh/uv/install.sh \
 RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh \
     | env RTK_INSTALL_DIR=/usr/local/bin sh
 
+# Install Bun (JavaScript runtime). Required because oh-my-opencode-slim's CLI
+# ships a `#!/usr/bin/env bun` shebang — without `bun` on PATH the binary fails
+# to exec with "/usr/bin/env: 'bun': No such file or directory". Standalone
+# binary; `BUN_INSTALL` controls the prefix so the launcher lands at
+# /usr/local/bin/bun (already on PATH for every user).
+RUN curl -fsSL https://bun.sh/install \
+    | env BUN_INSTALL=/usr/local bash
+
 # Python tools installed via `uv tool install` into a shared, image-baked
 # location. Venvs live at /opt/uv-tools (root-owned, world-readable); shims
 # land in /usr/local/bin so every user has them on PATH without modifying the
@@ -161,10 +170,11 @@ ENV UV_TOOL_BIN_DIR=/usr/local/bin
 
 # Graphify (PyPI: `graphifyy`, CLI: `graphify`) + spec-kit (CLI: `specify`).
 # spec-kit isn't published to PyPI by the upstream maintainer (the `specify-cli`
-# name on PyPI is owned by an unrelated third party), so install from git. To
-# avoid pulling unstable `.devN` builds from HEAD, the latest published release
-# tag is resolved from the GitHub API at build time — matches the @latest
-# pattern used by the npm/uv installs above; rebuild to pick up new releases.
+# name on PyPI is owned by an unrelated third party), so install from git at a
+# pinned tag. Previously this resolved the latest tag dynamically via the GitHub
+# API, but `api.github.com` rate-limits/blocks anonymous build-time calls,
+# bricking the build. Bump SPEC_KIT_TAG manually when a new release is wanted —
+# see https://github.com/github/spec-kit/releases.
 #
 # `build-essential` + `python3-dev` are installed transiently for this RUN
 # only and purged at the end — graphifyy pulls `tree-sitter-dm`, which ships
@@ -172,15 +182,13 @@ ENV UV_TOOL_BIN_DIR=/usr/local/bin
 # time. The compiled .so lives inside the venv, so neither the C toolchain
 # nor the dev headers are needed at runtime; system `python3` (already
 # installed above) remains for the venvs to link against.
+ARG SPEC_KIT_TAG=v0.8.18
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,target=/root/.cache/uv \
     apt-get update \
     && apt-get install -y --no-install-recommends build-essential python3-dev \
     && uv tool install graphifyy \
-    && SPEC_KIT_TAG=$(curl -fsSL https://api.github.com/repos/github/spec-kit/releases/latest \
-        | grep -m1 '"tag_name"' | cut -d'"' -f4) \
-    && [ -n "$SPEC_KIT_TAG" ] \
     && uv tool install specify-cli \
         --from "git+https://github.com/github/spec-kit.git@${SPEC_KIT_TAG}" \
     && apt-get purge -y --auto-remove build-essential python3-dev \
@@ -194,6 +202,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # config and auth state live alongside the user's native CLI installs.
 RUN mkdir -p /home/agent/.cache/ms-playwright \
     && chown -R 1000:1000 /home/agent/.cache
+
+# Disable Playwright's stale-browser garbage collection. By default `playwright
+# install` deletes browser revisions not referenced by the *current* package
+# version — which silently wipes other projects' browsers out of the shared
+# `isolated-pw-browsers` cache volume whenever a project on a newer Playwright
+# version installs. With GC off, installs only add revisions; cleanup is manual
+# (`npx playwright uninstall --all` from inside a container) when desired.
+ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 
 # Firewall script — root-owned, executable, dormant unless invoked
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh

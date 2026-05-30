@@ -15,6 +15,7 @@ The image ships:
 | Figma (Framelink) | `figma-developer-mcp` | MCP | Public Figma REST API; requires a personal access token |
 | Playwright | `playwright-cli` | CLI + skills | Browser automation via [Playwright CLI](https://github.com/microsoft/playwright-cli) |
 | uv | `uv` | Python tool manager | Standalone Rust binary, fetches its own Python on demand |
+| Bun | `bun` | JavaScript runtime | Required by oh-my-opencode-slim (its CLI uses a `#!/usr/bin/env bun` shebang); also available on PATH for general use |
 | RTK | `rtk` | CLI token optimizer | Filters/dedups command output before it reaches the LLM context ([rtk-ai/rtk](https://github.com/rtk-ai/rtk)) |
 | Graphify | `graphify` | Codebase knowledge graph | Maps code/docs into a queryable graph ([safishamsi/graphify](https://github.com/safishamsi/graphify)). Baked in but **not auto-enabled** — activate per project with `graphify install --project`. |
 | spec-kit | `specify` | Spec-Driven Development | Generates implementations from specs ([github/spec-kit](https://github.com/github/spec-kit)). Baked in but **not auto-enabled** — initialize per project with `specify init .`. |
@@ -46,10 +47,13 @@ mkdir -p ~/.claude ~/.config/opencode ~/.local/share/opencode ~/.config/rtk ~/.l
 touch ~/.claude.json
 ```
 
-**3. Install the Playwright skills.** Runs inside a throwaway container so you don't need Node + npm on the host; the skills land in your bind-mounted `~/.claude/skills/` (and `~/.config/opencode/` if the installer targets it). The `playwright-cli install --skills` step also fetches browser binaries as a side effect, so mount the shared `isolated-pw-browsers` named volume here too — otherwise the download lands in a container layer that's discarded with `--rm` and the dev container has to re-download on first attach:
+**3. Install the Playwright skills.** Runs inside a throwaway container so you don't need Node + npm on the host; the skills land in your bind-mounted `~/.claude/skills/` (and `~/.config/opencode/` if the installer targets it). The `playwright-cli install --skills` step also fetches browser binaries as a side effect, so mount the shared `isolated-pw-browsers` named volume here too — otherwise the download lands in a container layer that's discarded with `--rm` and the dev container has to re-download on first attach.
+
+`-w /home/agent` overrides the image's `WORKDIR /workspace`. `playwright-cli install --skills` writes skills *relative to `$PWD`* (it has no `--global` mode), and `/workspace` isn't bind-mounted in this bootstrap invocation — so without the workdir override, the install reports success but the skills land in an ephemeral container layer and disappear with `--rm`. Pointing `$PWD` at `/home/agent` makes the relative `.claude/skills/playwright-cli` resolve into the bind-mounted home and reach your host.
 
 ```bash
 docker run --rm \
+  -w /home/agent \
   -v "$HOME/.claude:/home/agent/.claude" \
   -v "$HOME/.config/opencode:/home/agent/.config/opencode" \
   -v isolated-pw-browsers:/home/agent/.cache/ms-playwright \
@@ -314,6 +318,8 @@ fi
 This fires once on container create, only if the workspace's `package.json` references Playwright. It downloads the project's pinned Chromium revision into the cache (no-op if it's already there). After the first attach you never see the "browser not found" prompt — projects on the same Playwright version reuse the cache, new versions add another revision next to the existing ones. Standalone `docker run` invocations don't get this — for them it's still a one-time `npx playwright install` after attaching.
 
 **Firewall caveat.** `cdn.playwright.dev` (the browser download CDN) is not in the default firewall allowlist. With the firewall enabled, either add `-e FIREWALL_EXTRA_HOSTS=cdn.playwright.dev` or install browsers once with the firewall off, then enable it.
+
+**Stale-browser GC is disabled.** The image sets `PLAYWRIGHT_SKIP_BROWSER_GC=1`. By default `playwright install` deletes any browser revision not referenced by the *current* package version — which, against a shared cache volume, means a project on Playwright 1.51 wipes out the chromium revision that the project next door pinned to 1.49 the moment it installs. With GC off, installs only ever add revisions; nothing else's browsers get evicted out from under it. Cleanup becomes manual (see below) instead of automatic.
 
 **Cache cleanup.** Over time the volume accumulates revisions from every Playwright version you've touched. If it gets uncomfortable, `npx playwright uninstall --all` inside a container clears it, then re-run install for the versions you currently care about.
 

@@ -10,6 +10,7 @@ The image ships:
 |---|---|---|---|
 | Claude Code | `claude` | Coding agent | Anthropic's CLI |
 | OpenCode | `opencode` | Coding agent | OpenCode's CLI |
+| oh-my-opencode-slim | `oh-my-opencode-slim` | OpenCode plugin + agents | Slimmed agent-orchestration plugin for OpenCode (Orchestrator, Explorer, Oracle, Librarian, Designer, Fixer subagents) ([alvinunreal/oh-my-opencode-slim](https://github.com/alvinunreal/oh-my-opencode-slim)). Baked in but **not auto-enabled** — install presets per host with `oh-my-opencode-slim install`. |
 | context7 | `context7-mcp` | MCP | Up-to-date library docs (Upstash) |
 | Figma (Framelink) | `figma-developer-mcp` | MCP | Public Figma REST API; requires a personal access token |
 | Playwright | `playwright-cli` | CLI + skills | Browser automation via [Playwright CLI](https://github.com/microsoft/playwright-cli) |
@@ -93,7 +94,19 @@ For OpenCode, edit `~/.config/opencode/opencode.json` directly — OpenCode has 
 
 Inspect connection state with `opencode mcp list`; troubleshoot a misbehaving server with `opencode mcp debug <name>`.
 
-**5. Install the RTK hook.** RTK's `init -g` writes a `PreToolUse` hook into `~/.claude/settings.json` so every bash invocation gets passed through the token-optimizing proxy. Run it in a throwaway container — same shape as the Playwright skills step — and it persists for every container plus your native `claude`:
+**5. Install oh-my-opencode-slim agents.** This OpenCode plugin adds a team of specialist subagents (Orchestrator, Explorer, Oracle, Librarian, Designer, Fixer) and writes config to `~/.config/opencode/oh-my-opencode-slim.json` plus skill assets under the bind-mounted opencode dirs. Run its `install` subcommand once in a throwaway container — same shape as the Playwright-skills step:
+
+```bash
+docker run -it --rm \
+  -v "$HOME/.config/opencode:/home/agent/.config/opencode" \
+  -v "$HOME/.local/share/opencode:/home/agent/.local/share/opencode" \
+  braydens/agentic-base:latest \
+  oh-my-opencode-slim install
+```
+
+`-it` (rather than the bare `--rm` used in step 3) because the installer prompts for model assignments per agent role. Re-run the same command later to change assignments or pick up new presets after a base-image rebuild.
+
+**6. Install the RTK hook.** RTK's `init -g` writes a `PreToolUse` hook into `~/.claude/settings.json` so every bash invocation gets passed through the token-optimizing proxy. Run it in a throwaway container — same shape as the Playwright skills step — and it persists for every container plus your native `claude`:
 
 ```bash
 docker run --rm \
@@ -111,7 +124,7 @@ The hook calls `rtk` on `PATH`. In the base image that's `/usr/local/bin/rtk`. *
 
 Inspect token savings with `rtk gain`.
 
-**6. Playwright browsers — usually handled for you.** The shipped `devcontainer.json` includes a `postCreateCommand` that installs the project's pinned Chromium revision automatically whenever the workspace's `package.json` references Playwright. Browsers land in `~/.cache/ms-playwright/`, backed by the `isolated-pw-browsers` named volume so they persist across rebuilds without polluting your host home. See [Playwright browsers — cache volume + auto-install](#playwright-browsers--cache-volume--auto-install) for the rationale.
+**7. Playwright browsers — usually handled for you.** The shipped `devcontainer.json` includes a `postCreateCommand` that installs the project's pinned Chromium revision automatically whenever the workspace's `package.json` references Playwright. Browsers land in `~/.cache/ms-playwright/`, backed by the `isolated-pw-browsers` named volume so they persist across rebuilds without polluting your host home. See [Playwright browsers — cache volume + auto-install](#playwright-browsers--cache-volume--auto-install) for the rationale.
 
 For standalone `docker run` invocations (or to manually add Firefox/WebKit), do it from inside a running container:
 

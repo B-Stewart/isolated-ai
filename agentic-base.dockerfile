@@ -10,6 +10,9 @@ RUN --mount=type=cache,target=/root/.npm \
     npm install -g opencode-ai@latest
 
 RUN --mount=type=cache,target=/root/.npm \
+    npm install -g oh-my-opencode-slim@latest
+
+RUN --mount=type=cache,target=/root/.npm \
     npm install -g @upstash/context7-mcp@latest
 
 RUN --mount=type=cache,target=/root/.npm \
@@ -107,6 +110,7 @@ COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 # claude.exe is the real Linux launcher shipped by @anthropic-ai/claude-code, not a Windows artifact.
 RUN ln -sf ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/local/bin/claude \
     && ln -sf ../lib/node_modules/opencode-ai/bin/opencode /usr/local/bin/opencode \
+    && ln -sf ../lib/node_modules/oh-my-opencode-slim/dist/cli/index.js /usr/local/bin/oh-my-opencode-slim \
     && ln -sf ../lib/node_modules/@upstash/context7-mcp/dist/index.js /usr/local/bin/context7-mcp \
     && ln -sf ../lib/node_modules/@playwright/cli/playwright-cli.js /usr/local/bin/playwright-cli \
     && ln -sf ../lib/node_modules/figma-developer-mcp/dist/bin.js /usr/local/bin/figma-developer-mcp
@@ -114,12 +118,14 @@ RUN ln -sf ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/loc
 # Symlink agent bins into the user's local bin
 RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
     && ln -sf /usr/local/bin/opencode /home/agent/.local/bin/opencode \
+    && ln -sf /usr/local/bin/oh-my-opencode-slim /home/agent/.local/bin/oh-my-opencode-slim \
     && ln -sf /usr/local/bin/context7-mcp /home/agent/.local/bin/context7-mcp \
     && ln -sf /usr/local/bin/playwright-cli /home/agent/.local/bin/playwright-cli \
     && ln -sf /usr/local/bin/figma-developer-mcp /home/agent/.local/bin/figma-developer-mcp \
     && chown -h 1000:1000 \
        /home/agent/.local/bin/claude \
        /home/agent/.local/bin/opencode \
+       /home/agent/.local/bin/oh-my-opencode-slim \
        /home/agent/.local/bin/context7-mcp \
        /home/agent/.local/bin/playwright-cli \
        /home/agent/.local/bin/figma-developer-mcp

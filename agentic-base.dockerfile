@@ -136,6 +136,32 @@ RUN corepack enable
 RUN curl -LsSf https://astral.sh/uv/install.sh \
     | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
 
+# Install RTK (token-optimizing CLI proxy). Standalone Rust binary; intercepts
+# bash command output, filters/dedups it before it reaches the LLM context.
+# Wired into Claude via a PreToolUse hook written by `rtk init -g` (host-side
+# bootstrap step in the README — the hook persists in the bind-mounted
+# ~/.claude/settings.json so every container plus native Claude pick it up).
+RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh \
+    | env RTK_INSTALL_DIR=/usr/local/bin sh
+
+# Python tools installed via `uv tool install` into a shared, image-baked
+# location. Venvs live at /opt/uv-tools (root-owned, world-readable); shims
+# land in /usr/local/bin so every user has them on PATH without modifying the
+# bind-mounted home dirs. Tools are installed but NOT globally activated — the
+# consumer enables them per-project (see tools table in README). Upgrade by
+# rebuilding the image.
+ENV UV_TOOL_DIR=/opt/uv-tools
+ENV UV_TOOL_BIN_DIR=/usr/local/bin
+
+# Graphify — codebase-to-knowledge-graph (PyPI package is `graphifyy`, CLI is `graphify`).
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv tool install graphifyy
+
+# spec-kit — Spec-Driven Development toolkit from GitHub. Installed from git
+# HEAD to match the @latest pattern used for the npm-installed agents above.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+
 # Pre-create the Playwright browser cache dir. Kept as a named volume in the
 # consumer devcontainer (browsers are bulky and not user-edited), so image-side
 # ownership/perms must exist as 1000:1000 for Docker's volume init to honor them.

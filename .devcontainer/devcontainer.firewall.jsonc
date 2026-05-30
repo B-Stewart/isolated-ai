@@ -34,6 +34,8 @@
     "source=${localEnv:HOME}/.claude.json,target=/home/agent/.claude.json,type=bind",
     "source=${localEnv:HOME}/.config/opencode,target=/home/agent/.config/opencode,type=bind",
     "source=${localEnv:HOME}/.local/share/opencode,target=/home/agent/.local/share/opencode,type=bind",
+    "source=${localEnv:HOME}/.config/rtk,target=/home/agent/.config/rtk,type=bind",
+    "source=${localEnv:HOME}/.local/share/rtk,target=/home/agent/.local/share/rtk,type=bind",
     "source=isolated-pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume",
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],

@@ -104,6 +104,9 @@ ENV DISABLE_AUTOUPDATER=1
 # our project might overlap memory with another if we don't turn this off.
 ENV CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 
+# Disable opencode's auto updates
+ENV OPENCODE_DISABLE_AUTOUPDATE=1
+
 # Copy global node_modules from the builder
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 

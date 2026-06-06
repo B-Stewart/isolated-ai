@@ -119,7 +119,7 @@ docker run --rm \
   -v "$HOME/.config/rtk:/home/agent/.config/rtk" \
   -v "$HOME/.local/share/rtk:/home/agent/.local/share/rtk" \
   braydens/agentic-base:latest \
-  rtk init -g --auto-patch
+  rtk init -g --auto-patch --claude && rtk init -g --auto-patch --opencode
 ```
 
 `--auto-patch` skips the interactive "Patch existing settings.json? [y/N]" prompt — without it, `rtk init` detects non-interactive stdin (which the throwaway container always is) and defaults to `N`, leaving the hook *not* installed.

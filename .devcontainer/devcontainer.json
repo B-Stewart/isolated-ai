@@ -13,6 +13,7 @@
   // "forwardPorts": [3000],
   // "portsAttributes": { "3000": { "label": "web" } },
   "mounts": [
+    "source=${localEnv:HOME}/.agents,target=/home/agent/.agents,type=bind",
     "source=${localEnv:HOME}/.claude,target=/home/agent/.claude,type=bind",
     "source=${localEnv:HOME}/.claude.json,target=/home/agent/.claude.json,type=bind",
     "source=${localEnv:HOME}/.config/opencode,target=/home/agent/.config/opencode,type=bind",

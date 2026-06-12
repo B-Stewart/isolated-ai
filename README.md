@@ -17,6 +17,7 @@ The image ships:
 | uv | `uv` | Python tool manager | Standalone Rust binary, fetches its own Python on demand |
 | Bun | `bun` | JavaScript runtime | Required by oh-my-opencode-slim (its CLI uses a `#!/usr/bin/env bun` shebang); also available on PATH for general use |
 | RTK | `rtk` | CLI token optimizer | Filters/dedups command output before it reaches the LLM context ([rtk-ai/rtk](https://github.com/rtk-ai/rtk)) |
+| Trivy | `trivy` | Security scanner | Vulnerability, misconfiguration, and secret scanning CLI ([aquasecurity/trivy](https://github.com/aquasecurity/trivy)) |
 | Graphify | `graphify` | Codebase knowledge graph | Maps code/docs into a queryable graph ([safishamsi/graphify](https://github.com/safishamsi/graphify)). Baked in but **not auto-enabled** — activate per project with `graphify install --project`. |
 | spec-kit | `specify` | Spec-Driven Development | Generates implementations from specs ([github/spec-kit](https://github.com/github/spec-kit)). Baked in but **not auto-enabled** — initialize per project with `specify init .`. |
 

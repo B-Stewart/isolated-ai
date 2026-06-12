@@ -154,6 +154,20 @@ RUN curl -LsSf https://astral.sh/uv/install.sh \
 RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh \
     | env RTK_INSTALL_DIR=/usr/local/bin sh
 
+# Install Trivy (vulnerability, misconfiguration, and secret scanner) from the
+# official Aqua Security apt repository so the `trivy` CLI is available on PATH.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key \
+        -o /etc/apt/keyrings/trivy.asc \
+    && chmod a+r /etc/apt/keyrings/trivy.asc \
+    && echo "deb [signed-by=/etc/apt/keyrings/trivy.asc] https://aquasecurity.github.io/trivy-repo/deb generic main" \
+        > /etc/apt/sources.list.d/trivy.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends trivy \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Bun (JavaScript runtime). Required because oh-my-opencode-slim's CLI
 # ships a `#!/usr/bin/env bun` shebang — without `bun` on PATH the binary fails
 # to exec with "/usr/bin/env: 'bun': No such file or directory". Standalone
@@ -185,7 +199,7 @@ ENV UV_TOOL_BIN_DIR=/usr/local/bin
 # time. The compiled .so lives inside the venv, so neither the C toolchain
 # nor the dev headers are needed at runtime; system `python3` (already
 # installed above) remains for the venvs to link against.
-ARG SPEC_KIT_TAG=v0.8.18
+ARG SPEC_KIT_TAG=v0.10.2
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,target=/root/.cache/uv \

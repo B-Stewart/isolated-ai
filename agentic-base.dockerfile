@@ -21,6 +21,9 @@ RUN --mount=type=cache,target=/root/.npm \
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g figma-developer-mcp@latest
 
+RUN --mount=type=cache,target=/root/.npm \
+    npm install -g firebase-tools@latest
+
 # Runtime stage
 FROM node:24-slim
 
@@ -117,7 +120,8 @@ RUN ln -sf ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/loc
     && ln -sf ../lib/node_modules/oh-my-opencode-slim/dist/cli/index.js /usr/local/bin/oh-my-opencode-slim \
     && ln -sf ../lib/node_modules/@upstash/context7-mcp/dist/index.js /usr/local/bin/context7-mcp \
     && ln -sf ../lib/node_modules/@playwright/cli/playwright-cli.js /usr/local/bin/playwright-cli \
-    && ln -sf ../lib/node_modules/figma-developer-mcp/dist/bin.js /usr/local/bin/figma-developer-mcp
+    && ln -sf ../lib/node_modules/figma-developer-mcp/dist/bin.js /usr/local/bin/figma-developer-mcp \
+    && ln -sf ../lib/node_modules/firebase-tools/lib/bin/firebase.js /usr/local/bin/firebase
 
 # Symlink agent bins into the user's local bin
 RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
@@ -126,13 +130,15 @@ RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
     && ln -sf /usr/local/bin/context7-mcp /home/agent/.local/bin/context7-mcp \
     && ln -sf /usr/local/bin/playwright-cli /home/agent/.local/bin/playwright-cli \
     && ln -sf /usr/local/bin/figma-developer-mcp /home/agent/.local/bin/figma-developer-mcp \
+    && ln -sf /usr/local/bin/firebase /home/agent/.local/bin/firebase \
     && chown -h 1000:1000 \
        /home/agent/.local/bin/claude \
        /home/agent/.local/bin/opencode \
        /home/agent/.local/bin/oh-my-opencode-slim \
        /home/agent/.local/bin/context7-mcp \
        /home/agent/.local/bin/playwright-cli \
-       /home/agent/.local/bin/figma-developer-mcp
+       /home/agent/.local/bin/figma-developer-mcp \
+       /home/agent/.local/bin/firebase
 
 # Enable Corepack so `yarn` and `pnpm` shims exist on PATH. Done as root so the
 # shims land in /usr/local/bin (the agent user can't write there at runtime).

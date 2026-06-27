@@ -9,10 +9,11 @@
   "containerEnv": {
     "COMPOSE_PROJECT_NAME": "${localWorkspaceFolderBasename}"
   },
-  "initializeCommand": "mkdir -p ~/.claude ~/.config/opencode ~/.local/share/opencode ~/.config/rtk ~/.local/share/rtk ~/.config/configstore ~/.cache/firebase && touch ~/.claude.json",
+  "initializeCommand": "mkdir -p ~/.agents ~/.claude ~/.config/opencode ~/.local/share/opencode ~/.config/rtk ~/.local/share/rtk ~/.config/configstore ~/.cache/firebase ~/.config/gh ~/.codegraph && touch ~/.claude.json",
   // "forwardPorts": [3000],
   // "portsAttributes": { "3000": { "label": "web" } },
   "mounts": [
+    "source=${localEnv:HOME}/.agents,target=/home/agent/.agents,type=bind",
     "source=${localEnv:HOME}/.claude,target=/home/agent/.claude,type=bind",
     "source=${localEnv:HOME}/.claude.json,target=/home/agent/.claude.json,type=bind",
     "source=${localEnv:HOME}/.config/opencode,target=/home/agent/.config/opencode,type=bind",
@@ -21,6 +22,8 @@
     "source=${localEnv:HOME}/.local/share/rtk,target=/home/agent/.local/share/rtk,type=bind",
     "source=${localEnv:HOME}/.config/configstore,target=/home/agent/.config/configstore,type=bind",
     "source=${localEnv:HOME}/.cache/firebase,target=/home/agent/.cache/firebase,type=bind",
+    "source=${localEnv:HOME}/.config/gh,target=/home/agent/.config/gh,type=bind",
+    "source=${localEnv:HOME}/.codegraph,target=/home/agent/.codegraph,type=bind",
     "source=isolated-pw-browsers,target=/home/agent/.cache/ms-playwright,type=volume",
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],

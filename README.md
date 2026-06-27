@@ -14,12 +14,14 @@ The image ships:
 | context7 | `context7-mcp` | MCP | Up-to-date library docs (Upstash) |
 | Figma (Framelink) | `figma-developer-mcp` | MCP | Public Figma REST API; requires a personal access token |
 | Firebase | `firebase` | CLI | Firebase CLI (`firebase-tools`) for project deploys, auth, and emulator workflows |
+| GitHub CLI | `gh` | CLI | GitHub issues, PRs, checks, releases, and auth-aware repo workflows |
 | Playwright | `playwright-cli` | CLI + skills | Browser automation via [Playwright CLI](https://github.com/microsoft/playwright-cli) |
 | uv | `uv` | Python tool manager | Standalone Rust binary, fetches its own Python on demand |
 | Bun | `bun` | JavaScript runtime | Required by oh-my-opencode-slim (its CLI uses a `#!/usr/bin/env bun` shebang); also available on PATH for general use |
 | RTK | `rtk` | CLI token optimizer | Filters/dedups command output before it reaches the LLM context ([rtk-ai/rtk](https://github.com/rtk-ai/rtk)) |
 | Trivy | `trivy` | Security scanner | Vulnerability, misconfiguration, and secret scanning CLI ([aquasecurity/trivy](https://github.com/aquasecurity/trivy)) |
 | Graphify | `graphify` | Codebase knowledge graph | Maps code/docs into a queryable graph ([safishamsi/graphify](https://github.com/safishamsi/graphify)). Baked in but **not auto-enabled** — activate per project with `graphify install --project`. |
+| CodeGraph | `codegraph` | Codebase knowledge graph | Local code graph/index CLI ([colbymchenry/codegraph](https://github.com/colbymchenry/codegraph)). Baked in but **not auto-enabled** — initialize per project with `codegraph init`. |
 | spec-kit | `specify` | Spec-Driven Development | Generates implementations from specs ([github/spec-kit](https://github.com/github/spec-kit)). Baked in but **not auto-enabled** — initialize per project with `specify init .`. |
 
 Skip to:
@@ -45,7 +47,7 @@ docker pull braydens/agentic-base:latest
 **2. Create the host config paths.** Docker would otherwise auto-create them root-owned, and would auto-create `~/.claude.json` as a *directory* (it can't tell file vs dir intent), which breaks both agents in surprising ways:
 
 ```bash
-mkdir -p ~/.claude ~/.config/opencode ~/.local/share/opencode ~/.config/rtk ~/.local/share/rtk ~/.config/configstore ~/.cache/firebase
+mkdir -p ~/.agents ~/.claude ~/.config/opencode ~/.local/share/opencode ~/.config/rtk ~/.local/share/rtk ~/.config/configstore ~/.cache/firebase ~/.config/gh ~/.codegraph
 touch ~/.claude.json
 ```
 
@@ -130,7 +132,23 @@ The hook calls `rtk` on `PATH`. In the base image that's `/usr/local/bin/rtk`. *
 
 Inspect token savings with `rtk gain`.
 
-**7. Playwright browsers — usually handled for you.** The shipped `devcontainer.json` includes a `postCreateCommand` that installs the project's pinned Chromium revision automatically whenever the workspace's `package.json` references Playwright. Browsers land in `~/.cache/ms-playwright/`, backed by the `isolated-pw-browsers` named volume so they persist across rebuilds without polluting your host home. See [Playwright browsers — cache volume + auto-install](#playwright-browsers--cache-volume--auto-install) for the rationale.
+**7. Authenticate GitHub CLI if needed.** `gh` stores auth/config in the bind-mounted `~/.config/gh`, so one login survives rebuilds and is shared with native WSL usage:
+
+```bash
+gh auth login
+```
+
+Inside a devcontainer, VS Code's git credential forwarding handles normal `git` auth, but `gh` still reads its own config directory for issue/PR/check/release workflows. For throwaway standalone containers, mount `~/.config/gh` the same way as the devcontainer.
+
+**8. Initialize CodeGraph per project if needed.** The `codegraph` binary is available on PATH and defaults to local project state under `./.codegraph/` (for example `./.codegraph/codegraph.db`). Run it inside each workspace you want indexed:
+
+```bash
+codegraph init
+```
+
+The optional global home state at `~/.codegraph/` is bind-mounted from the host. The image also sets `CODEGRAPH_TELEMETRY=0`, `DO_NOT_TRACK=1`, and `CODEGRAPH_NO_DAEMON=1` for quieter, container-friendly runs.
+
+**9. Playwright browsers — usually handled for you.** The shipped `devcontainer.json` includes a `postCreateCommand` that installs the project's pinned Chromium revision automatically whenever the workspace's `package.json` references Playwright. Browsers land in `~/.cache/ms-playwright/`, backed by the `isolated-pw-browsers` named volume so they persist across rebuilds without polluting your host home. See [Playwright browsers — cache volume + auto-install](#playwright-browsers--cache-volume--auto-install) for the rationale.
 
 For standalone `docker run` invocations (or to manually add Firefox/WebKit), do it from inside a running container:
 
@@ -179,6 +197,8 @@ docker run -it --rm \
   --tmpfs /tmp:rw,noexec,nosuid,size=512m \
   -v "$HOME/.claude:/home/agent/.claude" \
   -v "$HOME/.claude.json:/home/agent/.claude.json" \
+  -v "$HOME/.config/gh:/home/agent/.config/gh" \
+  -v "$HOME/.codegraph:/home/agent/.codegraph" \
   -v "$PWD:/workspace" \
   braydens/agentic-base:latest \
   claude --dangerously-skip-permissions
@@ -198,6 +218,8 @@ docker run -it --rm \
   --tmpfs /tmp:rw,noexec,nosuid,size=512m \
   -v "$HOME/.claude:/home/agent/.claude" \
   -v "$HOME/.claude.json:/home/agent/.claude.json" \
+  -v "$HOME/.config/gh:/home/agent/.config/gh" \
+  -v "$HOME/.codegraph:/home/agent/.codegraph" \
   -v "$PWD:/workspace" \
   braydens/agentic-base:latest \
   sh -c 'sudo /usr/local/bin/init-firewall.sh && exec claude --dangerously-skip-permissions'
@@ -241,10 +263,16 @@ CDN-backed targets (npm, GitHub objects) rotate IPs over hours/days. If a long-l
 
 ### Build the image
 
-Rebuild whenever you want fresher agent versions — everything is pinned to `@latest`:
+Rebuild command:
 
 ```bash
 docker build -f agentic-base.dockerfile -t braydens/agentic-base:latest .
+```
+
+Whenever you want fresher agent versions rebuild with --no-cache — everything is pinned to `@latest`:
+
+```bash
+docker build --no-cache -f agentic-base.dockerfile -t braydens/agentic-base:latest .
 ```
 
 ### Push to Docker Hub
@@ -280,10 +308,12 @@ The image expects **agent config and auth to be bind-mounted from the host**, no
 | `~/.local/share/rtk/` | `/home/agent/.local/share/rtk/` | RTK runtime state — `tee/` logs of failed-command full output, `rtk gain` savings stats |
 | `~/.config/configstore/` | `/home/agent/.config/configstore/` | Firebase CLI auth (`firebase-tools.json`) and update-check state (`update-notifier-firebase-tools.json`) |
 | `~/.cache/firebase/` | `/home/agent/.cache/firebase/` | Firebase CLI cache, including emulator/tool downloads |
+| `~/.config/gh/` | `/home/agent/.config/gh/` | GitHub CLI auth/config (`gh auth login`) |
+| `~/.codegraph/` | `/home/agent/.codegraph/` | Optional CodeGraph global state/config; project indexes stay in each workspace's `./.codegraph/` |
 
 The Playwright browser cache (`~/.cache/ms-playwright/`) stays on a named volume (`isolated-pw-browsers`) — browsers are bulky binaries, not user-edited config, and you don't want them living in your host home.
 
-**Why bind mounts instead of named volumes.** One source of truth between containerized agents and native Claude/OpenCode/Firebase running directly on the WSL host. A skill installed once on the host is visible in every container; an MCP server registered in any container is visible to the host CLI; `firebase login` state and update-check metadata persist across rebuilds. Curated parts of `~/.claude/` (`settings.json`, `skills/`, `commands/`) can be checked into a dotfiles repo.
+**Why bind mounts instead of named volumes.** One source of truth between containerized agents and native Claude/OpenCode/Firebase/GitHub CLI/CodeGraph running directly on the WSL host. A skill installed once on the host is visible in every container; an MCP server registered in any container is visible to the host CLI; `firebase login`, `gh auth login`, and update-check metadata persist across rebuilds. Curated parts of `~/.claude/` (`settings.json`, `skills/`, `commands/`) can be checked into a dotfiles repo.
 
 **Trade-off being made.** All containers + native usage share one global state — there's no per-project isolation of `~/.claude.json` or Firebase's configstore login. That's the intent, not a bug. If you want per-project isolation, swap the bind mounts for named volumes.
 
@@ -291,9 +321,9 @@ The Playwright browser cache (`~/.cache/ms-playwright/`) stays on a named volume
 
 **UID alignment.** The container's `agent` user is UID/GID 1000. On WSL the default user is also 1000, so the bind mount needs no `chown` dance. If your WSL user is on a different UID, `id -u` will tell you — align the host user to 1000 or open an issue to add a `--build-arg`.
 
-**What's gitignore-able.** Treat the host paths as part of your dotfiles. `~/.claude/settings.json`, `~/.claude/skills/`, `~/.claude/commands/` are good candidates for versioning. `~/.claude.json`, `~/.config/configstore/firebase-tools.json`, and anything that holds OAuth tokens or `FIGMA_API_KEY` values should stay out of git.
+**What's gitignore-able.** Treat the host paths as part of your dotfiles. `~/.claude/settings.json`, `~/.claude/skills/`, `~/.claude/commands/` are good candidates for versioning. `~/.claude.json`, `~/.config/configstore/firebase-tools.json`, `~/.config/gh/hosts.yml`, and anything that holds OAuth tokens or `FIGMA_API_KEY` values should stay out of git.
 
-**Belt-and-suspenders for the bind-mount sources (`initializeCommand`).** When a bind-mount source path doesn't exist on the host, the Docker daemon auto-creates it — but as root, since dockerd runs as root, leaving the container's `agent` user unable to write into the supposed config dir. For the `~/.claude.json` file-bind specifically, Docker can't tell file-vs-dir intent and will create it as an empty *directory*, which silently breaks both agents. Both devcontainer variants set `initializeCommand` to `mkdir -p` the dirs and `touch ~/.claude.json` on the host *before* mounts resolve — this also keeps Firebase's configstore writable so `firebase -V` can record update-check state without warnings. Even if you skipped first-run §step 2, the devcontainer attach won't leave you with root-owned auto-created paths. The standalone `docker run` invocations below have no such safety net, so for those the first-run mkdir is still required.
+**Belt-and-suspenders for the bind-mount sources (`initializeCommand`).** When a bind-mount source path doesn't exist on the host, the Docker daemon auto-creates it — but as root, since dockerd runs as root, leaving the container's `agent` user unable to write into the supposed config dir. For the `~/.claude.json` file-bind specifically, Docker can't tell file-vs-dir intent and will create it as an empty *directory*, which silently breaks both agents. Both devcontainer variants set `initializeCommand` to `mkdir -p` the dirs and `touch ~/.claude.json` on the host *before* mounts resolve — this also keeps Firebase, GitHub CLI, and CodeGraph state writable. Even if you skipped first-run §step 2, the devcontainer attach won't leave you with root-owned auto-created paths. The standalone `docker run` invocations below have no such safety net, so for those the first-run mkdir is still required.
 
 ### Playwright — CLI + skills, not MCP
 

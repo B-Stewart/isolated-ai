@@ -24,6 +24,9 @@ RUN --mount=type=cache,target=/root/.npm \
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g firebase-tools@latest
 
+RUN --mount=type=cache,target=/root/.npm \
+    npm install -g @colbymchenry/codegraph@latest
+
 # Runtime stage
 FROM node:24-slim
 
@@ -110,18 +113,27 @@ ENV CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 # Disable opencode's auto updates
 ENV OPENCODE_DISABLE_AUTOUPDATE=1
 
+# Disable astro telemetry because it tries to write to a config it doesn't have access to 
+ENV ASTRO_TELEMETRY_DISABLED=1
+
+# Keep codegraph local/non-daemonized by default inside short-lived containers.
+ENV CODEGRAPH_TELEMETRY=0
+ENV DO_NOT_TRACK=1
+ENV CODEGRAPH_NO_DAEMON=1
+
 # Copy global node_modules from the builder
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 # Agent + MCP bin shims — recreate the symlinks npm installs (COPY would dereference them and break node_modules resolution).
 # claude.exe is the real Linux launcher shipped by @anthropic-ai/claude-code, not a Windows artifact.
 RUN ln -sf ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/local/bin/claude \
-    && ln -sf ../lib/node_modules/opencode-ai/bin/opencode /usr/local/bin/opencode \
+    && ln -sf ../lib/node_modules/opencode-ai/bin/opencode.exe /usr/local/bin/opencode \
     && ln -sf ../lib/node_modules/oh-my-opencode-slim/dist/cli/index.js /usr/local/bin/oh-my-opencode-slim \
     && ln -sf ../lib/node_modules/@upstash/context7-mcp/dist/index.js /usr/local/bin/context7-mcp \
     && ln -sf ../lib/node_modules/@playwright/cli/playwright-cli.js /usr/local/bin/playwright-cli \
     && ln -sf ../lib/node_modules/figma-developer-mcp/dist/bin.js /usr/local/bin/figma-developer-mcp \
-    && ln -sf ../lib/node_modules/firebase-tools/lib/bin/firebase.js /usr/local/bin/firebase
+    && ln -sf ../lib/node_modules/firebase-tools/lib/bin/firebase.js /usr/local/bin/firebase \
+    && ln -sf ../lib/node_modules/@colbymchenry/codegraph/npm-shim.js /usr/local/bin/codegraph
 
 # Symlink agent bins into the user's local bin
 RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
@@ -131,6 +143,7 @@ RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
     && ln -sf /usr/local/bin/playwright-cli /home/agent/.local/bin/playwright-cli \
     && ln -sf /usr/local/bin/figma-developer-mcp /home/agent/.local/bin/figma-developer-mcp \
     && ln -sf /usr/local/bin/firebase /home/agent/.local/bin/firebase \
+    && ln -sf /usr/local/bin/codegraph /home/agent/.local/bin/codegraph \
     && chown -h 1000:1000 \
        /home/agent/.local/bin/claude \
        /home/agent/.local/bin/opencode \
@@ -138,7 +151,8 @@ RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
        /home/agent/.local/bin/context7-mcp \
        /home/agent/.local/bin/playwright-cli \
        /home/agent/.local/bin/figma-developer-mcp \
-       /home/agent/.local/bin/firebase
+       /home/agent/.local/bin/firebase \
+       /home/agent/.local/bin/codegraph
 
 # Enable Corepack so `yarn` and `pnpm` shims exist on PATH. Done as root so the
 # shims land in /usr/local/bin (the agent user can't write there at runtime).
@@ -172,6 +186,20 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         > /etc/apt/sources.list.d/trivy.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends trivy \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GitHub CLI (`gh`) from the official GitHub apt repository. Auth/config
+# live in ~/.config/gh, which the devcontainer bind-mounts from the host.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && chmod a+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bun (JavaScript runtime). Required because oh-my-opencode-slim's CLI
@@ -272,6 +300,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && ( groupadd --gid ${DOCKER_GID} docker 2>/dev/null \
          || groupadd docker ) \
     && usermod -aG docker agent
+
+# Some root-run installers write into $HOME; hand ownership back before dropping
+# privileges so standalone runs can create config/state under /home/agent.
+RUN chown -R 1000:1000 /home/agent
 
 USER agent
 WORKDIR /workspace

@@ -15,6 +15,7 @@ The image ships:
 | Figma (Framelink) | `figma-developer-mcp` | MCP | Public Figma REST API; requires a personal access token |
 | Firebase | `firebase` | CLI | Firebase CLI (`firebase-tools`) for project deploys, auth, and emulator workflows |
 | GitHub CLI | `gh` | CLI | GitHub issues, PRs, checks, releases, and auth-aware repo workflows |
+| .NET SDK | `dotnet` | SDK | .NET development |
 | Playwright | `playwright-cli` | CLI + skills | Browser automation via [Playwright CLI](https://github.com/microsoft/playwright-cli) |
 | uv | `uv` | Python tool manager | Standalone Rust binary, fetches its own Python on demand |
 | Bun | `bun` | JavaScript runtime | Required by oh-my-opencode-slim (its CLI uses a `#!/usr/bin/env bun` shebang); also available on PATH for general use |

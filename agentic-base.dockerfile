@@ -202,6 +202,26 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
+# Install the .NET SDK from Microsoft's official Debian package repository.
+# node:24-slim may move between Debian releases, so keep the repository URL
+# aligned with the base image and fail rather than guessing on an unsupported
+# release.
+ARG DOTNET_VERSION=10.0
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    . /etc/os-release \
+    && case "${ID}:${VERSION_ID}" in \
+        debian:12|debian:13) ;; \
+        *) echo "ERROR: .NET SDK installation requires Debian 12 or 13 (found ${ID} ${VERSION_ID})" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL "https://packages.microsoft.com/config/debian/${VERSION_ID}/packages-microsoft-prod.deb" \
+        -o /tmp/packages-microsoft-prod.deb \
+    && dpkg -i /tmp/packages-microsoft-prod.deb \
+    && rm -f /tmp/packages-microsoft-prod.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends "dotnet-sdk-${DOTNET_VERSION}" \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Bun (JavaScript runtime). Required because oh-my-opencode-slim's CLI
 # ships a `#!/usr/bin/env bun` shebang — without `bun` on PATH the binary fails
 # to exec with "/usr/bin/env: 'bun': No such file or directory". Standalone

@@ -19,6 +19,9 @@ RUN --mount=type=cache,target=/root/.npm \
     npm install -g @playwright/cli@latest
 
 RUN --mount=type=cache,target=/root/.npm \
+    npm install -g agent-browser@latest
+
+RUN --mount=type=cache,target=/root/.npm \
     npm install -g figma-developer-mcp@latest
 
 RUN --mount=type=cache,target=/root/.npm \
@@ -131,6 +134,7 @@ RUN ln -sf ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/loc
     && ln -sf ../lib/node_modules/oh-my-opencode-slim/dist/cli/index.js /usr/local/bin/oh-my-opencode-slim \
     && ln -sf ../lib/node_modules/@upstash/context7-mcp/dist/index.js /usr/local/bin/context7-mcp \
     && ln -sf ../lib/node_modules/@playwright/cli/playwright-cli.js /usr/local/bin/playwright-cli \
+    && ln -sf ../lib/node_modules/agent-browser/bin/agent-browser.js /usr/local/bin/agent-browser \
     && ln -sf ../lib/node_modules/figma-developer-mcp/dist/bin.js /usr/local/bin/figma-developer-mcp \
     && ln -sf ../lib/node_modules/firebase-tools/lib/bin/firebase.js /usr/local/bin/firebase \
     && ln -sf ../lib/node_modules/@colbymchenry/codegraph/npm-shim.js /usr/local/bin/codegraph
@@ -141,6 +145,7 @@ RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
     && ln -sf /usr/local/bin/oh-my-opencode-slim /home/agent/.local/bin/oh-my-opencode-slim \
     && ln -sf /usr/local/bin/context7-mcp /home/agent/.local/bin/context7-mcp \
     && ln -sf /usr/local/bin/playwright-cli /home/agent/.local/bin/playwright-cli \
+    && ln -sf /usr/local/bin/agent-browser /home/agent/.local/bin/agent-browser \
     && ln -sf /usr/local/bin/figma-developer-mcp /home/agent/.local/bin/figma-developer-mcp \
     && ln -sf /usr/local/bin/firebase /home/agent/.local/bin/firebase \
     && ln -sf /usr/local/bin/codegraph /home/agent/.local/bin/codegraph \
@@ -150,6 +155,7 @@ RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
        /home/agent/.local/bin/oh-my-opencode-slim \
        /home/agent/.local/bin/context7-mcp \
        /home/agent/.local/bin/playwright-cli \
+       /home/agent/.local/bin/agent-browser \
        /home/agent/.local/bin/figma-developer-mcp \
        /home/agent/.local/bin/firebase \
        /home/agent/.local/bin/codegraph
@@ -264,6 +270,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         --from "git+https://github.com/github/spec-kit.git@${SPEC_KIT_TAG}" \
     && apt-get purge -y --auto-remove build-essential python3-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Bake agent-browser's Chrome for Testing download and Linux dependencies into
+# the image. HOME/XDG_CACHE_HOME keep its browser and runtime state under the
+# non-root user's home; the final ownership pass below makes the files writable.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    HOME=/home/agent XDG_CACHE_HOME=/home/agent/.cache \
+    agent-browser install --with-deps
 
 # Pre-create the Playwright browser cache dir. Kept as a named volume in the
 # consumer devcontainer (browsers are bulky and not user-edited), so image-side

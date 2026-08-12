@@ -17,6 +17,7 @@ The image ships:
 | GitHub CLI | `gh` | CLI | GitHub issues, PRs, checks, releases, and auth-aware repo workflows |
 | .NET SDK | `dotnet` | SDK | .NET development |
 | Playwright | `playwright-cli` | CLI + skills | Browser automation via [Playwright CLI](https://github.com/microsoft/playwright-cli) |
+| agent-browser | `agent-browser` | CLI | Browser automation via Chrome for Testing; Chrome and Linux dependencies are preinstalled |
 | uv | `uv` | Python tool manager | Standalone Rust binary, fetches its own Python on demand |
 | Bun | `bun` | JavaScript runtime | Required by oh-my-opencode-slim (its CLI uses a `#!/usr/bin/env bun` shebang); also available on PATH for general use |
 | RTK | `rtk` | CLI token optimizer | Filters/dedups command output before it reaches the LLM context ([rtk-ai/rtk](https://github.com/rtk-ai/rtk)) |

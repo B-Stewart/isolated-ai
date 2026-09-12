@@ -187,7 +187,83 @@ See [Firewall allowlist](#firewall-allowlist) for what's allowed and how to add 
 
 ### Use as a standalone container
 
-The image has no `ENTRYPOINT` or `CMD` — invoke the agent you want explicitly. Mount paths below match the Dev Container's bind-mount strategy (see [Mount strategy](#mount-strategy)).
+#### Recommended: persistent launcher
+
+`scripts/isoai` can be run from any project directory:
+
+```bash
+isoai
+```
+
+To run a command inside the matching persistent workspace container, put `--`
+before the command. Everything after `--` runs inside that container as the
+`agent` user:
+
+```bash
+isoai -- opencode
+isoai -- claude --dangerously-skip-permissions
+```
+
+To open the persistent container directly in local VS Code, use the
+experimental `code` mode:
+
+```bash
+isoai code
+isoai code -- opencode
+```
+
+The `--` form opens the matching workspace container first, then runs the
+rest of the command inside it as `agent`. This uses an undocumented VS Code
+remote URI format and requires the Dev Containers extension plus the `code`
+and `xxd` commands on the host. It may break when VS Code changes.
+
+The launcher creates the required host mount sources before Docker starts, mounts the current working directory at the identical absolute path inside the container, and mirrors the default `.devcontainer/devcontainer.json` mounts and `runArgs`. It starts a persistent, deterministically named container and prints its name. Running it again from the same directory reuses that container. The Playwright `postCreateCommand` check runs only when the container is first created.
+
+The script lives inside this repository. To install a copy on your PATH without adding anything to the repository:
+
+```bash
+mkdir -p ~/.local/bin
+install -m 755 /absolute/path/to/isolated-ai/scripts/isoai ~/.local/bin/isoai
+```
+
+Alternatively, symlink it so updates in this repository take effect immediately:
+
+```bash
+mkdir -p ~/.local/bin
+ln -sfn /absolute/path/to/isolated-ai/scripts/isoai ~/.local/bin/isoai
+```
+
+For **bash**, append the PATH export to `~/.bashrc`, then source it:
+
+```bash
+printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+For **zsh**, append it to `~/.zshrc`, then source it:
+
+```bash
+printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+As a fallback, attach manually with VS Code by installing the **Dev
+Containers** extension, then use **F1** → **Dev Containers: Attach to Running
+Container...** and select the printed container. Next choose **File** → **Open
+Folder** and enter the current working directory's identical absolute path
+inside the container. The same container is also available through VS Code's
+**Remote Explorer**.
+
+List launcher containers or stop and remove one with:
+
+```bash
+docker ps --filter 'name=isolated-ai-'
+docker rm -f <container-name>
+```
+
+#### Advanced/manual one-shot alternatives
+
+The image has no `ENTRYPOINT` or `CMD` — invoke the agent you want explicitly. These manual invocations are one-shot alternatives and do not provide the launcher's host initialization, persistent container, or automatic post-create check.
 
 **Workspace run — hardened, firewall off:**
 

@@ -78,6 +78,7 @@ mkdir -p \
   "$home/.config/gh" \
   "$home/.codegraph"
 touch "$home/.claude.json"
+touch "$home/.gitconfig"
 
 if command -v sha256sum >/dev/null 2>&1; then
   workspace_hash=$(printf '%s' "$workspace" | sha256sum | cut -c1-12)
@@ -102,6 +103,7 @@ mount_args=(
   --mount "type=bind,src=$home/.config/configstore,dst=/home/agent/.config/configstore"
   --mount "type=bind,src=$home/.cache/firebase,dst=/home/agent/.cache/firebase"
   --mount "type=bind,src=$home/.config/gh,dst=/home/agent/.config/gh"
+  --mount "type=bind,src=$home/.gitconfig,dst=/home/agent/.gitconfig"
   --mount "type=bind,src=$home/.codegraph,dst=/home/agent/.codegraph"
   --mount type=volume,src=isolated-pw-browsers,dst=/home/agent/.cache/ms-playwright
   --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock
@@ -114,6 +116,11 @@ run_args=(
   '--pids-limit=4096'
   '--tmpfs=/tmp:rw,nosuid,exec'
 )
+
+if [[ -n ${SSH_AUTH_SOCK:-} && -S $SSH_AUTH_SOCK ]]; then
+  mount_args+=(--mount "type=bind,src=$SSH_AUTH_SOCK,dst=/ssh-agent")
+  run_args+=(--env 'SSH_AUTH_SOCK=/ssh-agent')
+fi
 
 created=false
 if docker container inspect "$container_name" >/dev/null 2>&1; then

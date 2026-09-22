@@ -217,7 +217,17 @@ rest of the command inside it as `agent`. This uses an undocumented VS Code
 remote URI format and requires the Dev Containers extension plus the `code`
 and `xxd` commands on the host. It may break when VS Code changes.
 
-The launcher creates the required host mount sources before Docker starts, mounts the current working directory at the identical absolute path inside the container, and mirrors the default `.devcontainer/devcontainer.json` mounts and `runArgs`. It starts a persistent, deterministically named container and prints its name. Running it again from the same directory reuses that container. The Playwright `postCreateCommand` check runs only when the container is first created.
+The launcher creates the required host mount sources before Docker starts, including `~/.gitconfig`, mounts the current working directory at the identical absolute path inside the container, and mirrors the default `.devcontainer/devcontainer.json` mounts and `runArgs`. It bind-mounts `~/.gitconfig` at `/home/agent/.gitconfig`. When `SSH_AUTH_SOCK` names a live Unix socket, it also forwards that socket to `/ssh-agent` and sets the container's `SSH_AUTH_SOCK`; otherwise it launches normally without SSH-agent forwarding. `~/.config/gh` remains bind-mounted for GitHub HTTPS credentials and `gh` workflows.
+
+It starts a persistent, deterministically named container and prints its name. Running it again from the same directory reuses that container. The Playwright `postCreateCommand` check runs only when the container is first created. Docker cannot retrofit mounts onto an existing container, so recreate containers made before these mounts were added. Recreate one safely with its printed name:
+
+```bash
+container_name=$(isoai | awk '/^Container: / { print $2 }')
+docker rm -f "$container_name"
+isoai
+```
+
+The SSH-agent mount targets the host socket path at container creation time. If your host agent changes to a different socket, recreate the persistent container the same way.
 
 The script lives inside this repository. To install a copy on your PATH without adding anything to the repository:
 

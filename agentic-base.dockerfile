@@ -116,6 +116,10 @@ ENV CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 # Disable opencode's auto updates
 ENV OPENCODE_DISABLE_AUTOUPDATE=1
 
+# Environment variables for opencode slim
+ENV OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true 
+ENV OPENCODE_ENABLE_EXA=1
+
 # Disable astro telemetry because it tries to write to a config it doesn't have access to 
 ENV ASTRO_TELEMETRY_DISABLED=1
 

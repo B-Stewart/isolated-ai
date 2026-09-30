@@ -227,7 +227,7 @@ docker rm -f "$container_name"
 isoai
 ```
 
-The SSH-agent mount targets the host socket path at container creation time. If your host agent changes to a different socket, recreate the persistent container the same way.
+The SSH-agent mount targets the host socket path at container creation time. That socket is ephemeral and may be replaced or disappear after a host reboot. If Docker cannot start a stopped container because its `/ssh-agent` bind mount is invalid, `isoai` prints Docker's error and, only in an interactive terminal with a current live `SSH_AUTH_SOCK`, asks before removing and recreating the container with the usual mounts and run arguments. Recreating removes the old container's writable layer (including data not stored in bind mounts or volumes). Answering no, running noninteractively, or lacking a live host socket leaves the stopped container untouched; resolve the issue or start the host SSH agent and retry. Errors unrelated to the `/ssh-agent` mount are not recovered automatically. You can also recreate a container manually using the steps above.
 
 The script lives inside this repository. To install a copy on your PATH without adding anything to the repository:
 

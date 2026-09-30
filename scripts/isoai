@@ -123,11 +123,7 @@ if [[ -n ${SSH_AUTH_SOCK:-} && -S $SSH_AUTH_SOCK ]]; then
 fi
 
 created=false
-if docker container inspect "$container_name" >/dev/null 2>&1; then
-  if [[ "$(docker inspect -f '{{.State.Running}}' "$container_name")" != true ]]; then
-    docker start "$container_name" >/dev/null
-  fi
-else
+create_container() {
   docker run -d \
     --name "$container_name" \
     --user agent \
@@ -138,6 +134,40 @@ else
     "$image" \
     tail -f /dev/null >/dev/null
   created=true
+}
+
+if docker container inspect "$container_name" >/dev/null 2>&1; then
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$container_name")" != true ]]; then
+    if start_error=$(docker start "$container_name" 2>&1 >/dev/null); then
+      :
+    else
+      start_status=$?
+      printf '%s\n' "$start_error" >&2
+      lower_start_error=${start_error,,}
+      if [[ "$lower_start_error" == *mount* && "$start_error" == */ssh-agent* ]]; then
+        if [[ -z ${SSH_AUTH_SOCK:-} || ! -S $SSH_AUTH_SOCK ]]; then
+          printf 'isoai: the stopped container has a stale /ssh-agent mount, but no live host SSH_AUTH_SOCK is available; it was left unchanged. Start your host SSH agent and retry.\n' >&2
+          exit "$start_status"
+        fi
+        if [[ ! -t 0 || ! -r /dev/tty ]]; then
+          printf 'isoai: the stopped container has a stale /ssh-agent mount; run isoai interactively to approve recovery. The container was left unchanged.\n' >&2
+          exit "$start_status"
+        fi
+        printf 'isoai: remove the stopped container and recreate it with the current SSH_AUTH_SOCK? Its container writable layer will be lost. [y/N] ' >&2
+        if ! IFS= read -r answer </dev/tty || [[ ! "$answer" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+          printf 'isoai: recovery declined; the stopped container was left unchanged.\n' >&2
+          exit "$start_status"
+        fi
+        docker rm "$container_name" >/dev/null
+        create_container
+      else
+        printf 'isoai: docker start failed for an unrelated error; the container was left unchanged. Resolve the error and retry.\n' >&2
+        exit "$start_status"
+      fi
+    fi
+  fi
+else
+  create_container
 fi
 
 if [[ "$created" == true ]]; then

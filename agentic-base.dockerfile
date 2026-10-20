@@ -2,33 +2,10 @@
 # Builder stage — agents installed here, copied to runtime stage
 FROM node:24-slim AS builder
 
-# Each agent installs in its own RUN line so a single failure doesn't cascade.
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @anthropic-ai/claude-code@latest
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g opencode-ai@latest
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g oh-my-opencode-slim@latest
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @upstash/context7-mcp@latest
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @playwright/cli@latest
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g agent-browser@latest
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g figma-developer-mcp@latest
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g firebase-tools@latest
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @colbymchenry/codegraph@latest
+# Each install stays a separate command in the build-only installer script.
+RUN --mount=type=bind,source=scripts/image/base/install-npm-tools.sh,target=/tmp/install-npm-tools.sh,ro \
+    --mount=type=cache,target=/root/.npm \
+    bash /tmp/install-npm-tools.sh
 
 # Runtime stage
 FROM node:24-slim
@@ -38,61 +15,18 @@ LABEL org.opencontainers.image.title="agentic-base" \
       org.opencontainers.image.source="https://github.com/local/isolated-ai"
 
 # System deps. Cache mounts on apt to keep rebuilds fast.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=bind,source=scripts/image/base/install-system-deps.sh,target=/tmp/install-system-deps.sh,ro \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    rm -f /etc/apt/apt.conf.d/docker-clean \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        git \
-        git-lfs \
-        openssh-client \
-        curl \
-        ca-certificates \
-        unzip \
-        dnsutils \
-        sudo \
-        iptables \
-        ipset \
-        libasound2 \
-        libatk-bridge2.0-0 \
-        libatk1.0-0 \
-        libcups2 \
-        libdbus-1-3 \
-        libdrm2 \
-        libgbm1 \
-        libglib2.0-0 \
-        libgtk-3-0 \
-        libnspr4 \
-        libnss3 \
-        libpango-1.0-0 \
-        libx11-6 \
-        libx11-xcb1 \
-        libxcb1 \
-        libxcomposite1 \
-        libxdamage1 \
-        libxext6 \
-        libxfixes3 \
-        libxkbcommon0 \
-        libxrandr2 \
-        libxrender1 \
-        libxshmfence1 \
-        libxss1 \
-        libxtst6 \
-        fonts-liberation \
-        xdg-utils \
-        python3 \
-        python-is-python3 \
-    && git lfs install --system \
-    && rm -rf /var/lib/apt/lists/*
+    bash /tmp/install-system-deps.sh
 
 # Playwright browser system deps (chromium + firefox + webkit). Baked at build
 # time because runtime `playwright install --with-deps` needs sudo, which the
 # hardened devcontainer (no-new-privileges) deliberately blocks.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=bind,source=scripts/image/base/install-playwright-deps.sh,target=/tmp/install-playwright-deps.sh,ro \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
-    && npx --yes playwright@latest install-deps \
-    && rm -rf /var/lib/apt/lists/*
+    bash /tmp/install-playwright-deps.sh
 
 # Non-root user
 # node:24-slim ships with a `node` user at UID/GID 1000 — remove it so we can
@@ -106,8 +40,8 @@ RUN userdel -r node 2>/dev/null || true \
 
 ENV HOME=/home/agent
 ENV PATH=/home/agent/.local/bin:${PATH}
-# Disable Claude Code's auto-updater — agent versions are pinned in this dockerfile;
-# rebuild the image to pick up newer versions, don't let Claude self-update in place.
+# Disable Claude Code's auto-updater — agent selectors are in the build-only
+# npm installer script; rebuild the image to pick up updates.
 ENV DISABLE_AUTOUPDATER=1
 # Disable Claude Code's auto-memory feature, because we're containerized but sharing the mounted claude settings
 # our project might overlap memory with another if we don't turn this off.
@@ -131,114 +65,30 @@ ENV CODEGRAPH_NO_DAEMON=1
 # Copy global node_modules from the builder
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 
-# Agent + MCP bin shims — recreate the symlinks npm installs (COPY would dereference them and break node_modules resolution).
-# claude.exe is the real Linux launcher shipped by @anthropic-ai/claude-code, not a Windows artifact.
-RUN ln -sf ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/local/bin/claude \
-    && ln -sf ../lib/node_modules/opencode-ai/bin/opencode.exe /usr/local/bin/opencode \
-    && ln -sf ../lib/node_modules/oh-my-opencode-slim/dist/cli/index.js /usr/local/bin/oh-my-opencode-slim \
-    && ln -sf ../lib/node_modules/@upstash/context7-mcp/dist/index.js /usr/local/bin/context7-mcp \
-    && ln -sf ../lib/node_modules/@playwright/cli/playwright-cli.js /usr/local/bin/playwright-cli \
-    && ln -sf ../lib/node_modules/agent-browser/bin/agent-browser.js /usr/local/bin/agent-browser \
-    && ln -sf ../lib/node_modules/figma-developer-mcp/dist/bin.js /usr/local/bin/figma-developer-mcp \
-    && ln -sf ../lib/node_modules/firebase-tools/lib/bin/firebase.js /usr/local/bin/firebase \
-    && ln -sf ../lib/node_modules/@colbymchenry/codegraph/npm-shim.js /usr/local/bin/codegraph
+RUN --mount=type=bind,source=scripts/image/base/link-agent-tools.sh,target=/tmp/link-agent-tools.sh,ro \
+    bash /tmp/link-agent-tools.sh
 
-# Symlink agent bins into the user's local bin
-RUN ln -sf /usr/local/bin/claude /home/agent/.local/bin/claude \
-    && ln -sf /usr/local/bin/opencode /home/agent/.local/bin/opencode \
-    && ln -sf /usr/local/bin/oh-my-opencode-slim /home/agent/.local/bin/oh-my-opencode-slim \
-    && ln -sf /usr/local/bin/context7-mcp /home/agent/.local/bin/context7-mcp \
-    && ln -sf /usr/local/bin/playwright-cli /home/agent/.local/bin/playwright-cli \
-    && ln -sf /usr/local/bin/agent-browser /home/agent/.local/bin/agent-browser \
-    && ln -sf /usr/local/bin/figma-developer-mcp /home/agent/.local/bin/figma-developer-mcp \
-    && ln -sf /usr/local/bin/firebase /home/agent/.local/bin/firebase \
-    && ln -sf /usr/local/bin/codegraph /home/agent/.local/bin/codegraph \
-    && chown -h 1000:1000 \
-       /home/agent/.local/bin/claude \
-       /home/agent/.local/bin/opencode \
-       /home/agent/.local/bin/oh-my-opencode-slim \
-       /home/agent/.local/bin/context7-mcp \
-       /home/agent/.local/bin/playwright-cli \
-       /home/agent/.local/bin/agent-browser \
-       /home/agent/.local/bin/figma-developer-mcp \
-       /home/agent/.local/bin/firebase \
-       /home/agent/.local/bin/codegraph
-
-# Enable Corepack so `yarn` and `pnpm` shims exist on PATH. Done as root so the
-# shims land in /usr/local/bin (the agent user can't write there at runtime).
-# Actual package-manager binaries are fetched on demand into ~/.cache/node/corepack,
-# which is user-writable, so each container can pull whatever version a project's
-# `packageManager` field pins without rebuilding the image.
-RUN corepack enable
-
-# Install uv (Python tool manager). Standalone Rust binary; fetches its own
-# Python on demand when projects request a specific interpreter.
-RUN curl -LsSf https://astral.sh/uv/install.sh \
-    | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
-
-# Install RTK (token-optimizing CLI proxy). Standalone Rust binary; intercepts
-# bash command output, filters/dedups it before it reaches the LLM context.
-# Wired into Claude via a PreToolUse hook written by `rtk init -g` (host-side
-# bootstrap step in the README — the hook persists in the bind-mounted
-# ~/.claude/settings.json so every container plus native Claude pick it up).
-RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh \
-    | env RTK_INSTALL_DIR=/usr/local/bin sh
-
-# Install Trivy (vulnerability, misconfiguration, and secret scanner) from the
-# official Aqua Security apt repository so the `trivy` CLI is available on PATH.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key \
-        -o /etc/apt/keyrings/trivy.asc \
-    && chmod a+r /etc/apt/keyrings/trivy.asc \
-    && echo "deb [signed-by=/etc/apt/keyrings/trivy.asc] https://aquasecurity.github.io/trivy-repo/deb generic main" \
-        > /etc/apt/sources.list.d/trivy.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends trivy \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install GitHub CLI (`gh`) from the official GitHub apt repository. Auth/config
-# live in ~/.config/gh, which the devcontainer bind-mounts from the host.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-    && chmod a+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-        > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends gh \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install the .NET SDK from Microsoft's official Debian package repository.
-# node:24-slim may move between Debian releases, so keep the repository URL
-# aligned with the base image and fail rather than guessing on an unsupported
-# release.
+# Installer version arguments are passed explicitly to the build-only scripts.
+ARG UV_VERSION=0.13.3
 ARG DOTNET_VERSION=10.0
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    . /etc/os-release \
-    && case "${ID}:${VERSION_ID}" in \
-        debian:12|debian:13) ;; \
-        *) echo "ERROR: .NET SDK installation requires Debian 12 or 13 (found ${ID} ${VERSION_ID})" >&2; exit 1 ;; \
-       esac \
-    && curl -fsSL "https://packages.microsoft.com/config/debian/${VERSION_ID}/packages-microsoft-prod.deb" \
-        -o /tmp/packages-microsoft-prod.deb \
-    && dpkg -i /tmp/packages-microsoft-prod.deb \
-    && rm -f /tmp/packages-microsoft-prod.deb \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends "dotnet-sdk-${DOTNET_VERSION}" \
-    && rm -rf /var/lib/apt/lists/*
+ARG BUN_VERSION=1.4.3
+ARG RTK_VERSION=v1.0.1
+ARG SPEC_KIT_TAG=v0.10.2
+# Match this group id to the mounted Docker socket on native Linux hosts.
+ARG DOCKER_GID=999
 
-# Install Bun (JavaScript runtime). Required because oh-my-opencode-slim's CLI
-# ships a `#!/usr/bin/env bun` shebang — without `bun` on PATH the binary fails
-# to exec with "/usr/bin/env: 'bun': No such file or directory". Standalone
-# binary; `BUN_INSTALL` controls the prefix so the launcher lands at
-# /usr/local/bin/bun (already on PATH for every user).
-RUN curl -fsSL https://bun.sh/install \
-    | env BUN_INSTALL=/usr/local bash
+# Corepack, uv, .NET SDK, and Bun. Project packageManager choices remain
+# project-controlled; standalone installer versions come from these build args.
+RUN --mount=type=bind,source=scripts/image/base/install-runtimes.sh,target=/tmp/install-runtimes.sh,ro \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    bash /tmp/install-runtimes.sh "${UV_VERSION}" "${DOTNET_VERSION}" "${BUN_VERSION}"
+
+# RTK, Trivy, GitHub CLI, and Docker CLI/Compose tools.
+RUN --mount=type=bind,source=scripts/image/base/install-cli-tools.sh,target=/tmp/install-cli-tools.sh,ro \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    bash /tmp/install-cli-tools.sh "${RTK_VERSION}" "${DOCKER_GID}"
 
 # Python tools installed via `uv tool install` into a shared, image-baked
 # location. Venvs live at /opt/uv-tools (root-owned, world-readable); shims
@@ -249,39 +99,24 @@ RUN curl -fsSL https://bun.sh/install \
 ENV UV_TOOL_DIR=/opt/uv-tools
 ENV UV_TOOL_BIN_DIR=/usr/local/bin
 
-# Graphify (PyPI: `graphifyy`, CLI: `graphify`) + spec-kit (CLI: `specify`).
+# spec-kit (CLI: `specify`).
 # spec-kit isn't published to PyPI by the upstream maintainer (the `specify-cli`
 # name on PyPI is owned by an unrelated third party), so install from git at a
 # pinned tag. Previously this resolved the latest tag dynamically via the GitHub
 # API, but `api.github.com` rate-limits/blocks anonymous build-time calls,
 # bricking the build. Bump SPEC_KIT_TAG manually when a new release is wanted —
 # see https://github.com/github/spec-kit/releases.
-#
-# `build-essential` + `python3-dev` are installed transiently for this RUN
-# only and purged at the end — graphifyy pulls `tree-sitter-dm`, which ships
-# no Linux wheels and must compile its C extension against Python.h at install
-# time. The compiled .so lives inside the venv, so neither the C toolchain
-# nor the dev headers are needed at runtime; system `python3` (already
-# installed above) remains for the venvs to link against.
-ARG SPEC_KIT_TAG=v0.10.2
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=bind,source=scripts/image/base/install-spec-kit.sh,target=/tmp/install-spec-kit.sh,ro \
     --mount=type=cache,target=/root/.cache/uv \
-    apt-get update \
-    && apt-get install -y --no-install-recommends build-essential python3-dev \
-    && uv tool install graphifyy \
-    && uv tool install specify-cli \
-        --from "git+https://github.com/github/spec-kit.git@${SPEC_KIT_TAG}" \
-    && apt-get purge -y --auto-remove build-essential python3-dev \
-    && rm -rf /var/lib/apt/lists/*
+    bash /tmp/install-spec-kit.sh "${SPEC_KIT_TAG}"
 
 # Bake agent-browser's Chrome for Testing download and Linux dependencies into
 # the image. HOME/XDG_CACHE_HOME keep its browser and runtime state under the
 # non-root user's home; the final ownership pass below makes the files writable.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=bind,source=scripts/image/base/install-agent-browser.sh,target=/tmp/install-agent-browser.sh,ro \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    HOME=/home/agent XDG_CACHE_HOME=/home/agent/.cache \
-    agent-browser install --with-deps
+    bash /tmp/install-agent-browser.sh
 
 # Pre-create the Playwright browser cache dir. Kept as a named volume in the
 # consumer devcontainer (browsers are bulky and not user-edited), so image-side
@@ -309,35 +144,6 @@ RUN chown root:root /usr/local/bin/init-firewall.sh \
 RUN echo 'agent ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh' \
     > /etc/sudoers.d/agent-firewall \
     && chmod 0440 /etc/sudoers.d/agent-firewall
-
-# Docker CLI + Compose v2 plugin for docker-outside-of-docker (DooD). No daemon
-# runs in this image — the container talks to the host daemon via a mounted
-# /var/run/docker.sock (see the devcontainer.json that consumes this image).
-#
-# DOCKER_GID controls the gid of the in-image `docker` group. It must match the
-# gid that owns the socket as it appears INSIDE the container. On Docker Desktop
-# (Windows/Mac) that's typically 0 (root) — Desktop relaxes the socket perms so
-# membership often isn't even required — but on a Linux host with native Docker
-# it's whatever the host's docker group gid is (commonly 999 or 998). Override
-# at build time if your host disagrees: `docker build --build-arg DOCKER_GID=998 …`.
-ARG DOCKER_GID=999
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/debian/gpg \
-        -o /etc/apt/keyrings/docker.asc \
-    && chmod a+r /etc/apt/keyrings/docker.asc \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
-        > /etc/apt/sources.list.d/docker.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        docker-ce-cli \
-        docker-compose-plugin \
-        docker-buildx-plugin \
-    && rm -rf /var/lib/apt/lists/* \
-    && ( groupadd --gid ${DOCKER_GID} docker 2>/dev/null \
-         || groupadd docker ) \
-    && usermod -aG docker agent
 
 # Some root-run installers write into $HOME; hand ownership back before dropping
 # privileges so standalone runs can create config/state under /home/agent.

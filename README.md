@@ -9,7 +9,7 @@ The image ships:
 | Tool | Binary | Kind | Purpose |
 |---|---|---|---|
 | Claude Code | `claude` | Coding agent | Anthropic's CLI |
-| OpenCode | `opencode` | Coding agent | OpenCode's CLI |
+| OpenCode v2 | `opencode` | Coding agent | Installed from `@opencode/cli@2` (the older `opencode-ai` package installs v1) |
 | oh-my-opencode-slim | `oh-my-opencode-slim` | OpenCode plugin + agents | Slimmed agent-orchestration plugin for OpenCode (Orchestrator, Explorer, Oracle, Librarian, Designer, Fixer subagents) ([alvinunreal/oh-my-opencode-slim](https://github.com/alvinunreal/oh-my-opencode-slim)). Baked in but **not auto-enabled** — install presets per host with `oh-my-opencode-slim install`. |
 | context7 | `context7-mcp` | MCP | Up-to-date library docs (Upstash) |
 | Figma (Framelink) | `figma-developer-mcp` | MCP | Public Figma REST API; requires a personal access token |
@@ -22,14 +22,13 @@ The image ships:
 | Bun | `bun` | JavaScript runtime | Required by oh-my-opencode-slim (its CLI uses a `#!/usr/bin/env bun` shebang); also available on PATH for general use |
 | RTK | `rtk` | CLI token optimizer | Filters/dedups command output before it reaches the LLM context ([rtk-ai/rtk](https://github.com/rtk-ai/rtk)) |
 | Trivy | `trivy` | Security scanner | Vulnerability, misconfiguration, and secret scanning CLI ([aquasecurity/trivy](https://github.com/aquasecurity/trivy)) |
-| Graphify | `graphify` | Codebase knowledge graph | Maps code/docs into a queryable graph ([safishamsi/graphify](https://github.com/safishamsi/graphify)). Baked in but **not auto-enabled** — activate per project with `graphify install --project`. |
 | CodeGraph | `codegraph` | Codebase knowledge graph | Local code graph/index CLI ([colbymchenry/codegraph](https://github.com/colbymchenry/codegraph)). Baked in but **not auto-enabled** — initialize per project with `codegraph init`. |
 | spec-kit | `specify` | Spec-Driven Development | Generates implementations from specs ([github/spec-kit](https://github.com/github/spec-kit)). Baked in but **not auto-enabled** — initialize per project with `specify init .`. |
 
 Skip to:
 
 - [Usage](#usage) — first-run setup, Dev Container and standalone invocations
-- [Contributing](#contributing) — build and push the base image
+- [Contributing](#contributing) — image structure, maintenance, checks, and builds
 - [Methodology](#methodology) — why the image is shaped this way
 
 ---
@@ -166,7 +165,7 @@ Drop a `.devcontainer/devcontainer.json` in your project pointing at this image 
 
 ```dockerfile
 FROM braydens/agentic-base:latest
-# project-specific layers (Bun, env vars, etc.)
+# project-specific packages or environment variables
 ```
 
 and update your `devcontainer.json` to build from it.
@@ -410,7 +409,101 @@ CDN-backed targets (npm, GitHub objects) rotate IPs over hours/days. If a long-l
 
 ## Contributing
 
+### Image build structure
+
+There are two images: `agentic-base` and `agentic-gamedev`, which inherits from
+the base. Their Dockerfiles stay at the repository root; installation details
+live in build-only Bash scripts grouped by image:
+
+```text
+agentic-base.dockerfile
+agentic-gamedev.dockerfile
+scripts/
+  image/
+    base/       # shared agent/developer environment installers
+    gamedev/    # additional game-development installers
+  tests/        # offline regressions and in-image smoke checks
+  isoai         # host-side runtime launcher, not an image installer
+  isoai-ssh-agent.py
+```
+
+**Ownership:** Dockerfiles define build stages, installation order, cache mounts,
+build arguments, image environment, users, and runtime setup. Installer scripts
+define package selectors, repositories, downloads, and installation commands.
+Existing exact-version and platform build arguments remain in the Dockerfiles
+and are passed explicitly to the relevant scripts.
+
+| Installer under `scripts/image/` | Responsibility |
+|---|---|
+| `base/install-npm-tools.sh` | Agent, plugin, MCP, browser CLI, Firebase, and CodeGraph npm packages in the builder stage |
+| `base/install-system-deps.sh` | Debian dependencies and system-wide Git LFS setup |
+| `base/install-playwright-deps.sh` | Playwright browser system libraries, not project browser downloads |
+| `base/link-agent-tools.sh` | Global and agent-local executable links after copying the builder's npm packages |
+| `base/install-runtimes.sh` | Corepack, uv, .NET SDK, and Bun |
+| `base/install-cli-tools.sh` | RTK, Trivy, GitHub CLI, and Docker CLI/plugins/group setup |
+| `base/install-spec-kit.sh` | spec-kit from its pinned upstream Git tag |
+| `base/install-agent-browser.sh` | Agent Browser's Chrome for Testing and Linux dependencies |
+| `gamedev/install-system-deps.sh` | Game-development libraries and the additional .NET runtime |
+| `gamedev/install-godot.sh` | Checksum-validated Godot .NET editor |
+| `gamedev/install-blender.sh` | Checksum-validated Blender archive |
+
+BuildKit mounts each installer read-only for its own `RUN` step; the scripts are
+not copied into the finished image. A script edit invalidates its installation
+step and subsequent dependent layers, not earlier unrelated steps. The npm tools
+share one installer step and are reinstalled together when that script changes.
+Build from the repository root with the full checkout as context (`.`), as shown
+below; a Dockerfile copied on its own is no longer sufficient. These scripts run
+as root inside image builds and are **not host bootstrap commands**.
+
+To add, remove, or update a tool, edit its installer, update executable links if
+needed, and update the tool/version summaries below. Change the Dockerfile only
+when its orchestration or build-argument interface changes. Keep bounded version
+selectors, download checksums, and explicit build-argument overrides intact.
+
 ### Build the images
+
+#### Image tool version policy (reviewed 2026-10-20)
+
+Image-owned npm tools use major-version selectors rather than `@latest`, so a
+rebuild can receive updates within the selected major without silently moving
+to a later major. Exact standalone installer pins require an explicit Dockerfile
+ARG bump. The authoritative selectors live in `scripts/image/base/`; ARG defaults
+live in the root Dockerfiles. The following release values are a review-date
+snapshot, not an additional version configuration:
+
+| Tool | Selector | Current stable | Source |
+|---|---|---:|---|
+| Claude Code | `@anthropic-ai/claude-code@2` | 2.1.304 | [npm registry](https://registry.npmjs.org/) |
+| OpenCode CLI | `@opencode/cli@2` | 2.0.32 | [npm registry](https://registry.npmjs.org/) |
+| oh-my-opencode-slim | `oh-my-opencode-slim@3` | 3.0.5 | [npm registry](https://registry.npmjs.org/) |
+| Context7 MCP | `@upstash/context7-mcp@4` | 4.4.4 | [npm registry](https://registry.npmjs.org/) |
+| Playwright CLI | `@playwright/cli@0` | 0.1.22 | [npm registry](https://registry.npmjs.org/) |
+| agent-browser | `agent-browser@0` | 0.39.1 | [npm registry](https://registry.npmjs.org/) |
+| Figma MCP | `figma-developer-mcp@0` | 0.13.2 | [npm registry](https://registry.npmjs.org/) |
+| Firebase CLI | `firebase-tools@15` | 15.34.0 | [npm registry](https://registry.npmjs.org/) |
+| CodeGraph | `@colbymchenry/codegraph@1` | 1.6.2 | [npm registry](https://registry.npmjs.org/) |
+| Playwright system dependencies | `playwright@1` | 1.64.1 | [npm registry](https://registry.npmjs.org/) |
+| uv | `UV_VERSION=0.13.3` | 0.13.3 | [uv releases](https://github.com/astral-sh/uv/releases) |
+| RTK | `RTK_VERSION=v1.0.1` | v1.0.1 | [RTK releases](https://github.com/rtk-ai/rtk/releases) |
+| Bun | `BUN_VERSION=1.4.3` | 1.4.3 | [Bun releases](https://github.com/oven-sh/bun/releases) |
+| Trivy | `trivy=0.*` | 0.76.0 | [Trivy releases](https://github.com/aquasecurity/trivy/releases) |
+| GitHub CLI | `gh=2.*` | 2.102.0 | [GitHub CLI releases](https://github.com/cli/cli/releases) |
+| Docker CLI | `docker-ce-cli=5:29.*` | 29.9.1 | [Docker Debian repository](https://download.docker.com/linux/debian/) |
+| Docker Compose plugin | `docker-compose-plugin=5.*` | 5.6.0 | [Docker Debian repository](https://download.docker.com/linux/debian/) |
+| Docker Buildx plugin | `docker-buildx-plugin=0.*` | 0.38.0 | [Docker Debian repository](https://download.docker.com/linux/debian/) |
+
+Major selectors are compatibility bounds, not exact locks: they do not pin
+transitive dependencies, and `@0` / `0.*` can still accept breaking minor
+releases before 1.0. Debian system libraries remain distro-managed. Node 24
+remains the chosen LTS line; spec-kit, Godot, and Blender retain their existing
+explicit version pins, and .NET retains its configured channels. Project
+`packageManager` choices remain project-controlled.
+
+External APT tools use quoted major-version globs; Docker CLI's `5:` is the
+Debian package epoch, not its upstream major. If a repository stops publishing
+a matching version, the build fails rather than falling back to a newer major.
+The release column records upstream versions; APT repositories may lag, so builds
+select matching versions advertised by their configured package indexes.
 
 Build the base image:
 
@@ -418,11 +511,22 @@ Build the base image:
 docker build -f agentic-base.dockerfile -t braydens/agentic-base:latest .
 ```
 
-Whenever you want fresher agent versions rebuild with --no-cache — everything is pinned to `@latest`:
+Rebuild with `--no-cache` to refresh range-pinned npm/APT tools. This does not
+change the exact uv, RTK, or Bun versions; bump their ARGs in
+`agentic-base.dockerfile` when you explicitly want a newer release:
 
 ```bash
 docker build --no-cache -f agentic-base.dockerfile -t braydens/agentic-base:latest .
 ```
+
+**OpenCode v2 migration:** Back up `~/.config/opencode` and
+`~/.local/share/opencode` before the first v2 launch; these host directories are
+shared by the project containers. Do not run v1 and v2 against the same live
+database. V1 plugins do not run in v2, so verify compatibility of any enabled
+plugins, including oh-my-opencode-slim, before using your normal configuration.
+See the [official migration guide](https://opencode.ai/v2/docs/migrate-v1).
+Rebuilding does not update existing containers; preserve any needed writable-layer
+data before recreating them from the new image.
 
 The game-development image is derived from the base image. Build the base
 first, then build the derived image:
@@ -437,15 +541,29 @@ Blender, update `BLENDER_VERSION` and `BLENDER_SHA256` together; pin the SHA256
 from that archive's official release manifest so builds do not need to fetch
 the manifest. The Blender archive uses the [IU13 mirror listed by Blender](https://mirror.blender.org/release/Blender5.2/)
 because the official origin rejects non-browser requests in this environment;
-the pinned checksum remains from the official manifest. The first smoke check
-runs the launcher regression tests and verifies the game image's tooling and a
-conventional `net8` test project (NuGet network access is required; the check
-uses a scratch project):
+the pinned checksum remains from the official manifest. Once the image is built,
+the game-development smoke check verifies its tools and a conventional `net8`
+test project (NuGet network access is required; the check uses a scratch project):
 
 ```bash
-scripts/tests/test-isoai.sh
-docker run --rm braydens/agentic-gamedev:latest bash -s < scripts/tests/smoke-gamedev.sh
+docker run --rm -i braydens/agentic-gamedev:latest bash -s < scripts/tests/smoke-gamedev.sh
 ```
+
+### Verification
+
+Run these offline checks after changing installers, Dockerfile wiring, or the
+launcher. The image-installer checks validate Bash syntax and build-script
+wiring; they do not execute privileged installers or prove downloaded tools run:
+
+```bash
+python3 scripts/tests/test-image-installers.py
+bash scripts/tests/test-isoai.sh
+python3 scripts/tests/test-isoai-ssh-agent.py
+```
+
+Rebuild affected images to validate real package installation; after changing the
+base, rebuild it before gamedev. Use the gamedev smoke command above for runtime
+validation. A successful offline check is not a substitute for an image build.
 
 SSH relay regression checks use Python 3 and synthetic agents, not your SSH
 keys. The Docker check requires a local game-development image and a checkout
@@ -454,7 +572,6 @@ path visible to the daemon; it does not pull an image. Set
 and UID 1000 support.
 
 ```bash
-python3 scripts/tests/test-isoai-ssh-agent.py
 python3 scripts/tests/test-isoai-ssh-docker.py
 ```
 
@@ -468,8 +585,13 @@ docker push braydens/agentic-base:latest
 
 | Path | What it is |
 |---|---|
-| `agentic-base.dockerfile` | The base image definition. Add/remove agents and MCP servers here. |
-| `agentic-gamedev.dockerfile` | Derived game-development image definition. |
+| `agentic-base.dockerfile` | Base-image orchestration, build arguments, environment, and runtime setup. |
+| `agentic-gamedev.dockerfile` | Derived game-development image orchestration and version/checksum arguments. |
+| `scripts/image/base/` | Base-image tool installers; edit package selectors and installation details here. |
+| `scripts/image/gamedev/` | Game-development dependency, Godot, and Blender installers. |
+| `scripts/tests/` | Offline installer/launcher/SSH regressions and image-dependent smoke checks; see [Verification](#verification). |
+| `scripts/isoai`, `scripts/isoai-ssh-agent.py` | Host-side container launcher and SSH-agent relay. |
+| `AGENTS.md` | Contributor/agent rules and pointers to the authoritative maintenance documentation. |
 | `init-firewall.sh` | Egress allowlist enforced via iptables/ipset. Edit the default host list near the top. |
 | `.devcontainer/devcontainer.json` | Default Dev Container config (firewall off). |
 | `.devcontainer/devcontainer.gd.jsonc` | Game-development Dev Container config using the derived image. |
@@ -522,7 +644,12 @@ The image used to ship `@playwright/mcp`. Upstream now points coding agents at [
 
 ### Playwright browsers — cache volume + auto-install
 
-Browser binaries (Chromium, Firefox, WebKit) are **not** baked into the image — only the system libs they need are. Browsers live in `~/.cache/ms-playwright/`, backed by the `isolated-pw-browsers` named volume so they survive container rebuilds.
+Playwright's project-versioned browser binaries (Chromium, Firefox, WebKit) are
+**not** baked into the image — only the system libs they need are. They live in
+`~/.cache/ms-playwright/`, backed by the `isolated-pw-browsers` named volume so they
+survive container rebuilds. Separately, Agent Browser's Chrome for Testing is
+baked in by `scripts/image/base/install-agent-browser.sh`; it does not replace
+Playwright's project-specific revisions.
 
 **Why not bake them in.** Playwright pins browser binaries to a *specific revision per Playwright version* (e.g. Playwright 1.49 wants `chromium-1140`, 1.51 wants `chromium-1155`). Baking one revision into the image would help only when a project happens to use that exact Playwright version; every other project would re-download regardless. The size cost (~300MB–1GB compressed for all three engines) buys very little practical win. The cache volume covers the actually-useful case: "don't re-download what's already on disk across rebuilds."
 

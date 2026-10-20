@@ -3,40 +3,76 @@
 set -Eeuo pipefail
 
 usage() {
-  printf 'Usage: isoai [code [-- <command> [args...]] | -- <command> [args...]]\n' >&2
+  printf 'Usage: isoai [help|--help|-h]\n'
+  printf '       isoai [--code|-c] [--image gd|-i gd] [-- <command> [args...]]\n'
+  printf '       isoai [--code|-c] [--image=gd|-i=gd] [-- <command> [args...]]\n'
+  printf '\n'
+  printf 'Launches an isolated-ai container (default image: braydens/agentic-base:latest).\n'
+  printf 'The only supported image selector is gd (braydens/agentic-gamedev:latest).\n'
+  printf '%s\n' '--code opens VS Code; a command after -- runs in the container.'
 }
 
 launch_code=false
 command_mode=false
-if [[ $# -gt 0 ]]; then
+image_selector=''
+while [[ $# -gt 0 ]]; do
   case "$1" in
+    help|--help|-h)
+      usage
+      exit 0
+      ;;
     --)
       command_mode=true
       shift
+      break
       ;;
-    code)
+    --code|-c)
       launch_code=true
       shift
-      if [[ $# -gt 0 && $1 != -- ]]; then
-        usage
-        printf 'isoai: code may only be followed by -- <command> [args...]\n' >&2
+      ;;
+    --image=*|-i=*)
+      image_selector=${1#*=}
+      if [[ -z $image_selector ]]; then
+        usage >&2
+        printf 'isoai: image selector must not be empty\n' >&2
         exit 2
       fi
-      if [[ $# -gt 0 ]]; then
-        command_mode=true
-        shift
+      if [[ $image_selector != gd ]]; then
+        usage >&2
+        printf 'isoai: unsupported image selector: %s\n' "$image_selector" >&2
+        exit 2
       fi
+      shift
+      ;;
+    --image|-i)
+      if [[ $# -lt 2 ]]; then
+        usage >&2
+        printf 'isoai: %s requires an image selector\n' "$1" >&2
+        exit 2
+      fi
+      image_selector=$2
+      if [[ -z $image_selector ]]; then
+        usage >&2
+        printf 'isoai: image selector must not be empty\n' >&2
+        exit 2
+      fi
+      if [[ $image_selector != gd ]]; then
+        usage >&2
+        printf 'isoai: unsupported image selector: %s\n' "$image_selector" >&2
+        exit 2
+      fi
+      shift 2
       ;;
     *)
-      usage
-      printf 'isoai: unsupported arguments\n' >&2
+      usage >&2
+      printf 'isoai: unsupported argument: %s\n' "$1" >&2
       exit 2
       ;;
   esac
-fi
+done
 
 if [[ "$command_mode" == true && $# -eq 0 ]]; then
-  usage
+  usage >&2
   printf 'isoai: -- must be followed by a command\n' >&2
   exit 2
 fi
@@ -91,6 +127,48 @@ workspace_base=${workspace_base//[^[:alnum:]_.-]/-}
 container_name="isolated-ai-${workspace_base}-${workspace_hash}"
 
 image='braydens/agentic-base:latest'
+if [[ $image_selector == gd ]]; then
+  image='braydens/agentic-gamedev:latest'
+  container_name+="-gd"
+fi
+
+ssh_agent_dir="$home/.local/state/isoai/ssh/$container_name"
+ssh_agent_path=/run/isoai/ssh/agent.sock
+ssh_upstream=''
+if ! mkdir -p "$ssh_agent_dir"; then
+  printf 'isoai: could not create the private SSH relay directory; refusing to start without a safe mount source.\n' >&2
+  exit 1
+fi
+if [[ -L "$ssh_agent_dir" || ! -d "$ssh_agent_dir" || ! -O "$ssh_agent_dir" ]]; then
+  printf 'isoai: private SSH relay directory must be a real directory owned by the current user; refusing to start.\n' >&2
+  exit 1
+fi
+if ! chmod 700 "$ssh_agent_dir"; then
+  printf 'isoai: could not set private SSH relay directory permissions; refusing to start.\n' >&2
+  exit 1
+fi
+if [[ -n ${SSH_AUTH_SOCK:-} ]]; then
+  if [[ -S $SSH_AUTH_SOCK ]]; then
+    ssh_upstream=$SSH_AUTH_SOCK
+  else
+    printf 'isoai: SSH_AUTH_SOCK is not an available socket; forwarding could not be refreshed and an existing relay may remain active.\n' >&2
+  fi
+else
+  printf 'isoai: no host SSH agent socket is available; forwarding could not be refreshed and an existing relay may remain active.\n' >&2
+fi
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+ssh_helper="$script_dir/isoai-ssh-agent.py"
+host_uid=$(id -u)
+if [[ $host_uid != 1000 ]]; then
+  printf 'isoai: host UID is not 1000; the container agent cannot access the private SSH relay without unsafe permissions. Forwarding could not be refreshed and an existing relay may remain active.\n' >&2
+elif ! command -v python3 >/dev/null 2>&1; then
+  printf 'isoai: python3 is unavailable; forwarding could not be refreshed and an existing relay may remain active.\n' >&2
+elif [[ ! -f $ssh_helper ]]; then
+  printf 'isoai: SSH relay helper is missing next to isoai; forwarding could not be refreshed and an existing relay may remain active.\n' >&2
+elif [[ -d "$ssh_agent_dir" ]] && ! python3 "$ssh_helper" ensure "$ssh_agent_dir" "$ssh_upstream"; then
+  printf 'isoai: SSH relay setup failed; forwarding could not be refreshed and an existing relay may remain active.\n' >&2
+fi
+
 mount_args=(
   --mount "type=bind,src=$workspace,dst=$workspace,consistency=cached"
   --mount "type=bind,src=$home/.agents,dst=/home/agent/.agents"
@@ -115,12 +193,10 @@ run_args=(
   '--security-opt=no-new-privileges:true'
   '--pids-limit=4096'
   '--tmpfs=/tmp:rw,nosuid,exec'
+  --env "SSH_AUTH_SOCK=$ssh_agent_path"
 )
 
-if [[ -n ${SSH_AUTH_SOCK:-} && -S $SSH_AUTH_SOCK ]]; then
-  mount_args+=(--mount "type=bind,src=$SSH_AUTH_SOCK,dst=/ssh-agent")
-  run_args+=(--env 'SSH_AUTH_SOCK=/ssh-agent')
-fi
+mount_args+=(--mount "type=bind,src=$ssh_agent_dir,dst=/run/isoai/ssh,readonly")
 
 created=false
 create_container() {
@@ -145,21 +221,8 @@ if docker container inspect "$container_name" >/dev/null 2>&1; then
       printf '%s\n' "$start_error" >&2
       lower_start_error=${start_error,,}
       if [[ "$lower_start_error" == *mount* && "$start_error" == */ssh-agent* ]]; then
-        if [[ -z ${SSH_AUTH_SOCK:-} || ! -S $SSH_AUTH_SOCK ]]; then
-          printf 'isoai: the stopped container has a stale /ssh-agent mount, but no live host SSH_AUTH_SOCK is available; it was left unchanged. Start your host SSH agent and retry.\n' >&2
-          exit "$start_status"
-        fi
-        if [[ ! -t 0 || ! -r /dev/tty ]]; then
-          printf 'isoai: the stopped container has a stale /ssh-agent mount; run isoai interactively to approve recovery. The container was left unchanged.\n' >&2
-          exit "$start_status"
-        fi
-        printf 'isoai: remove the stopped container and recreate it with the current SSH_AUTH_SOCK? Its container writable layer will be lost. [y/N] ' >&2
-        if ! IFS= read -r answer </dev/tty || [[ ! "$answer" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-          printf 'isoai: recovery declined; the stopped container was left unchanged.\n' >&2
-          exit "$start_status"
-        fi
-        docker rm "$container_name" >/dev/null
-        create_container
+        printf 'isoai: this existing container has a legacy /ssh-agent mount and cannot be retrofitted in place. It was left unchanged; snapshot and preserve its writable layer before any manual migration or recreation.\n' >&2
+        exit "$start_status"
       else
         printf 'isoai: docker start failed for an unrelated error; the container was left unchanged. Resolve the error and retry.\n' >&2
         exit "$start_status"

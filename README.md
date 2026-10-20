@@ -171,6 +171,10 @@ FROM braydens/agentic-base:latest
 
 and update your `devcontainer.json` to build from it.
 
+For the game-development image, copy [`.devcontainer/devcontainer.gd.jsonc`](.devcontainer/devcontainer.gd.jsonc)
+to your project as `.devcontainer/devcontainer.json` to use it instead of the
+default config.
+
 **Auth forwarding (Dev Containers extension).** When you "Reopen in Container," VS Code handles git auth automatically — no devcontainer.json changes needed:
 
 - **SSH** — your host's SSH agent socket is forwarded in via `SSH_AUTH_SOCK`. Keys stay on the host.
@@ -195,6 +199,49 @@ See [Firewall allowlist](#firewall-allowlist) for what's allowed and how to add 
 isoai
 ```
 
+The launcher defaults to `braydens/agentic-base:latest`. Use `--code` or
+`-c` to open the matching persistent container directly in local VS Code
+(replacing the old positional `code` mode), or use `--image=gd` / `-i=gd` or
+`--image gd` / `-i gd` to select `braydens/agentic-gamedev:latest`:
+
+```bash
+isoai --code
+isoai -c -- opencode
+isoai --image=gd
+isoai --image gd -- godot --headless --path "$PWD" --import
+isoai -i=gd -- blender --background --python script.py
+isoai --image=gd --code -- opencode
+isoai -i=gd -c -- opencode
+```
+
+The only supported image selector is `gd`. `isoai help`, `isoai --help`, and
+`isoai -h` print the launcher's built-in reference without requiring Docker.
+Launcher options can appear in any order before `--`; everything after `--`
+is passed through as the in-container command. Omit `--` to start or reuse the
+container without running a command. Keep the built-in help, launcher
+regression tests, and these README examples in sync when changing the CLI.
+
+The `gd` profile is for Godot 4.7.2 .NET project imports/tests and Blender
+5.2.2 LTS background Python scripting. It does not configure a GUI, display,
+GPU, or host bridge. Godot export templates are not included and must be
+installed separately. The image inherits the base image's .NET 10 SDK and adds
+.NET 8 runtime support for conventional `net8` project testing. Godot and
+Blender versions are pinned in the derived Dockerfile's build arguments;
+update those arguments explicitly to change either version.
+
+The game-development image is Linux `amd64` only because the official Blender
+Linux build is x64-only. ARM hosts need Docker's `linux/amd64` emulation and
+platform selection; native ARM support is not provided. Build the image
+locally before selecting this profile (build commands are below); do not
+assume the tag is published.
+
+Both profiles use the same deterministic workspace naming, with `-gd` appended
+for the game-development container. Pulling or rebuilding an image does not
+automatically recreate an existing container, and switching profiles leaves
+the other profile's container in place. The profiles share workspace files
+and host-mounted state, so avoid simultaneous modifications or imports that
+could conflict.
+
 To run a command inside the matching persistent workspace container, put `--`
 before the command. Everything after `--` runs inside that container as the
 `agent` user:
@@ -204,12 +251,12 @@ isoai -- opencode
 isoai -- claude --dangerously-skip-permissions
 ```
 
-To open the persistent container directly in local VS Code, use the
-experimental `code` mode:
+To open the persistent container directly in local VS Code, use `--code` (or
+`-c`):
 
 ```bash
-isoai code
-isoai code -- opencode
+isoai --code
+isoai --code -- opencode
 ```
 
 The `--` form opens the matching workspace container first, then runs the
@@ -217,9 +264,9 @@ rest of the command inside it as `agent`. This uses an undocumented VS Code
 remote URI format and requires the Dev Containers extension plus the `code`
 and `xxd` commands on the host. It may break when VS Code changes.
 
-The launcher creates the required host mount sources before Docker starts, including `~/.gitconfig`, mounts the current working directory at the identical absolute path inside the container, and mirrors the default `.devcontainer/devcontainer.json` mounts and `runArgs`. It bind-mounts `~/.gitconfig` at `/home/agent/.gitconfig`. When `SSH_AUTH_SOCK` names a live Unix socket, it also forwards that socket to `/ssh-agent` and sets the container's `SSH_AUTH_SOCK`; otherwise it launches normally without SSH-agent forwarding. `~/.config/gh` remains bind-mounted for GitHub HTTPS credentials and `gh` workflows.
+The launcher creates the required host mount sources before Docker starts, including `~/.gitconfig`, mounts the current working directory at the identical absolute path inside the container, and mirrors the default `.devcontainer/devcontainer.json` mounts and `runArgs`. It bind-mounts `~/.gitconfig` at `/home/agent/.gitconfig`. On Linux and WSL, when host Python 3 and a reachable `SSH_AUTH_SOCK` are available, it uses the adjacent `scripts/isoai-ssh-agent.py` helper to relay SSH-agent requests. The stable host directory `$HOME/.local/state/isoai/ssh/$container_name` is mounted read-only at `/run/isoai/ssh`, and the container uses `SSH_AUTH_SOCK=/run/isoai/ssh/agent.sock`. The relay reuses that directory and picks up the current upstream socket for new connections; its socket file may be replaced, but the directory must remain for the stopped container's lifetime. An unsafe or uncreatable relay directory prevents startup. If the host agent is unavailable, the helper disables forwarding and warns without blocking startup. If Python 3 or the helper is unavailable, startup continues with a warning, but an existing relay may still forward to its previous agent because it could not be refreshed. `~/.config/gh` remains bind-mounted for GitHub HTTPS credentials and `gh` workflows.
 
-It starts a persistent, deterministically named container and prints its name. Running it again from the same directory reuses that container. The Playwright `postCreateCommand` check runs only when the container is first created. Docker cannot retrofit mounts onto an existing container, so recreate containers made before these mounts were added. Recreate one safely with its printed name:
+It starts a persistent, deterministically named container and prints its name. Running it again from the same directory reuses that container. The Playwright `postCreateCommand` check runs only when the container is first created. Docker cannot retrofit mounts onto an existing container. The removal command below discards the container's writable layer; use it only when that loss is acceptable. For legacy SSH-mount failures, follow the preservation-first migration instructions below instead.
 
 ```bash
 container_name=$(isoai | awk '/^Container: / { print $2 }')
@@ -227,13 +274,24 @@ docker rm -f "$container_name"
 isoai
 ```
 
-The SSH-agent mount targets the host socket path at container creation time. That socket is ephemeral and may be replaced or disappear after a host reboot. If Docker cannot start a stopped container because its `/ssh-agent` bind mount is invalid, `isoai` prints Docker's error and, only in an interactive terminal with a current live `SSH_AUTH_SOCK`, asks before removing and recreating the container with the usual mounts and run arguments. Recreating removes the old container's writable layer (including data not stored in bind mounts or volumes). Answering no, running noninteractively, or lacking a live host socket leaves the stopped container untouched; resolve the issue or start the host SSH agent and retry. Errors unrelated to the `/ssh-agent` mount are not recovered automatically. You can also recreate a container manually using the steps above.
+The relay forwards signing authority: read-only mounting its directory does not prevent the container from asking the host agent to sign. The container's `agent` user (UID 1000 in this image) must match the host socket relay's permissions; do not make the socket world-accessible. Mount only the dedicated relay directory, not all of `/tmp` or `~/.ssh`.
+
+Containers created before this relay contract may have a saved single-file `/ssh-agent` bind mount. Updating the launcher/helper cannot retrofit that mount. Restart can fail if the saved source disappears or no longer has the expected socket type, even when the current host agent is healthy. If a legacy container fails to start, the launcher leaves it unchanged and prints snapshot guidance; do not remove it as an automatic repair. For a preservation-first migration, keep the container stopped and privately snapshot its writable layer:
+
+```bash
+container_name='your-container-name'
+snapshot_tag='local/isoai-legacy-snapshot:temporary'
+docker commit "$container_name" "$snapshot_tag"
+```
+
+The original container remains intact. The snapshot includes the writable layer, but not bind mounts or volumes; reconstruct their host sources and retain the original runtime configuration. A snapshot may contain secrets, so keep it private and do not publish it. Create a replacement under a temporary new name from the immutable snapshot, restoring the original configuration and reconstructed bind mounts (not Docker Desktop's internal mount paths). Validate its workspace contents and SSH forwarding before consenting to adoption, renaming, or deleting either container. Do not recreate from a mutable `latest` image in place of the snapshot, since that can discard state.
 
 The script lives inside this repository. To install a copy on your PATH without adding anything to the repository:
 
 ```bash
 mkdir -p ~/.local/bin
 install -m 755 /absolute/path/to/isolated-ai/scripts/isoai ~/.local/bin/isoai
+install -m 644 /absolute/path/to/isolated-ai/scripts/isoai-ssh-agent.py ~/.local/bin/isoai-ssh-agent.py
 ```
 
 Alternatively, symlink it so updates in this repository take effect immediately:
@@ -241,7 +299,10 @@ Alternatively, symlink it so updates in this repository take effect immediately:
 ```bash
 mkdir -p ~/.local/bin
 ln -sfn /absolute/path/to/isolated-ai/scripts/isoai ~/.local/bin/isoai
+ln -sfn /absolute/path/to/isolated-ai/scripts/isoai-ssh-agent.py ~/.local/bin/isoai-ssh-agent.py
 ```
+
+Keep the launcher and helper adjacent: the launcher locates the helper beside itself. Python 3 runs the helper, so it does not need an executable bit.
 
 For **bash**, append the PATH export to `~/.bashrc`, then source it:
 
@@ -315,7 +376,7 @@ docker run -it --rm \
 
 **Git auth without VS Code:**
 
-- **Forward an SSH agent socket** — add `-v "${SSH_AUTH_SOCK}:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent`. Keys stay on the host.
+- **Forward an SSH agent socket (one-shot only)** — add `-v "${SSH_AUTH_SOCK}:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent`. Keys stay on the host, but the saved mount points at an ephemeral socket path and can fail when restarting a stopped container after that socket is replaced or disappears. Use the persistent launcher for restart-safe forwarding.
 - **Mount `~/.ssh` read-only** — simplest, but exposes key files to the container; only acceptable for trusted workloads.
 
 ### Run modes at a glance
@@ -349,9 +410,9 @@ CDN-backed targets (npm, GitHub objects) rotate IPs over hours/days. If a long-l
 
 ## Contributing
 
-### Build the image
+### Build the images
 
-Rebuild command:
+Build the base image:
 
 ```bash
 docker build -f agentic-base.dockerfile -t braydens/agentic-base:latest .
@@ -361,6 +422,40 @@ Whenever you want fresher agent versions rebuild with --no-cache — everything 
 
 ```bash
 docker build --no-cache -f agentic-base.dockerfile -t braydens/agentic-base:latest .
+```
+
+The game-development image is derived from the base image. Build the base
+first, then build the derived image:
+
+```bash
+docker build -f agentic-base.dockerfile -t braydens/agentic-base:latest .
+docker build --platform=linux/amd64 -f agentic-gamedev.dockerfile -t braydens/agentic-gamedev:latest .
+```
+
+The derived image adds Godot 4.7.2 .NET and Blender 5.2.2 LTS. When overriding
+Blender, update `BLENDER_VERSION` and `BLENDER_SHA256` together; pin the SHA256
+from that archive's official release manifest so builds do not need to fetch
+the manifest. The Blender archive uses the [IU13 mirror listed by Blender](https://mirror.blender.org/release/Blender5.2/)
+because the official origin rejects non-browser requests in this environment;
+the pinned checksum remains from the official manifest. The first smoke check
+runs the launcher regression tests and verifies the game image's tooling and a
+conventional `net8` test project (NuGet network access is required; the check
+uses a scratch project):
+
+```bash
+scripts/tests/test-isoai.sh
+docker run --rm braydens/agentic-gamedev:latest bash -s < scripts/tests/smoke-gamedev.sh
+```
+
+SSH relay regression checks use Python 3 and synthetic agents, not your SSH
+keys. The Docker check requires a local game-development image and a checkout
+path visible to the daemon; it does not pull an image. Set
+`ISOAI_SSH_TEST_IMAGE` to use another locally available image with Python 3
+and UID 1000 support.
+
+```bash
+python3 scripts/tests/test-isoai-ssh-agent.py
+python3 scripts/tests/test-isoai-ssh-docker.py
 ```
 
 ### Push to Docker Hub
@@ -374,8 +469,10 @@ docker push braydens/agentic-base:latest
 | Path | What it is |
 |---|---|
 | `agentic-base.dockerfile` | The base image definition. Add/remove agents and MCP servers here. |
+| `agentic-gamedev.dockerfile` | Derived game-development image definition. |
 | `init-firewall.sh` | Egress allowlist enforced via iptables/ipset. Edit the default host list near the top. |
 | `.devcontainer/devcontainer.json` | Default Dev Container config (firewall off). |
+| `.devcontainer/devcontainer.gd.jsonc` | Game-development Dev Container config using the derived image. |
 | `.devcontainer/devcontainer.firewall.jsonc` | Variant with firewall enabled and the matching cap-drop loosening. |
 
 ---

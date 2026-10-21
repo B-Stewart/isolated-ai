@@ -1,0 +1,17 @@
+schemaVersion: "1"
+# No pstack-specific requirements are known; this is a base toolchain starting point.
+agent: isoai-opencode-omo
+args:
+  workspace:
+    required: true
+    description: Host project directory mounted read-write.
+workspace: ${{ env.args.workspace }}
+kits:
+  - source: ../kits/isoai-opencode-omo
+    args:
+      image: local/agentic-base-sbx:experiment
+sandboxOptions:
+  pullPolicy: never
+  skills: "off"
+  cpus: 2
+  memory: 4g

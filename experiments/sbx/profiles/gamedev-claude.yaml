@@ -1,0 +1,17 @@
+schemaVersion: "1"
+# No pstack-specific requirements are known; this is a base toolchain starting point.
+agent: isoai-claude
+args:
+  workspace:
+    required: true
+    description: Host project directory mounted read-write.
+workspace: ${{ env.args.workspace }}
+kits:
+  - source: ../kits/isoai-claude
+    args:
+      image: local/agentic-gamedev-sbx:experiment
+sandboxOptions:
+  pullPolicy: never
+  skills: "off"
+  cpus: 4
+  memory: 8g

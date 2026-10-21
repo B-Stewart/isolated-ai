@@ -1,0 +1,46 @@
+schemaVersion: "2"
+kind: sandbox
+name: isoai-opencode-omo
+args:
+  image:
+    default: local/agentic-base-sbx:experiment
+sandbox:
+  image: "${{ kit.args.image }}"
+  entrypoint: [opencode]
+credentials:
+  - service: anthropic
+    apiKey:
+      name: ANTHROPIC_API_KEY
+      proxyManaged: true
+      inject:
+        - domain: api.anthropic.com
+          header: x-api-key
+          format: "%s"
+permissions:
+  network:
+    allow: [api.anthropic.com, github.com, api.github.com, raw.githubusercontent.com, npmjs.org, registry.npmjs.org, pypi.org, files.pythonhosted.org]
+setup:
+  files:
+    - path: /home/agent/.config/opencode/opencode.json
+      content: |
+        {
+          "$schema": "https://opencode.ai/config.json",
+          "model": "anthropic/claude-sonnet-4-6",
+          "plugins": ["file:/usr/local/lib/node_modules/oh-my-opencode-slim"],
+          "update": "disable"
+        }
+    - path: /home/agent/.config/opencode/oh-my-opencode-slim.json
+      content: |
+        {
+          "autoUpdate": false,
+          "multiplexer": { "type": "none" },
+          "disabled_mcps": ["context7", "gh_grep"],
+          "agents": {
+            "orchestrator": { "model": "anthropic/claude-sonnet-4-6" },
+            "oracle": { "model": "anthropic/claude-sonnet-4-6" },
+            "explorer": { "model": "anthropic/claude-sonnet-4-6" },
+            "designer": { "model": "anthropic/claude-sonnet-4-6" },
+            "fixer": { "model": "anthropic/claude-sonnet-4-6" },
+            "council": { "model": "anthropic/claude-sonnet-4-6" }
+          }
+        }

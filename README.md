@@ -331,6 +331,17 @@ docker ps --filter 'name=isolated-ai-'
 docker rm -f <container-name>
 ```
 
+#### Experimental: Docker Sandboxes
+
+For an alternative to the host-side launcher, see the
+[SBX experiment guide](experiments/sbx/README.md). It provides Claude Code,
+OpenCode/OMO-slim, and gamedev profiles using thin adapters over the existing
+images, with Windows/WSL setup and explicit development-resource sharing.
+The adapters are separate from the hardened `isoai` images; they do not mount
+the host Docker socket or automatically import host agent state. Existing
+`isoai` and Dev Container behavior is unchanged. See the
+[comparison research](isoai-alternatives-research.md) for the trade-offs.
+
 #### Advanced/manual one-shot alternatives
 
 The image has no `ENTRYPOINT` or `CMD` — invoke the agent you want explicitly. These manual invocations are one-shot alternatives and do not provide the launcher's host initialization, persistent container, or automatic post-create check.

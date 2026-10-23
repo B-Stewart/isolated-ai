@@ -25,3 +25,5 @@ host-mounted agent configuration and project workspaces.
   with the installers. Update isoai and devcontainer settings when runtime
   behavior, image selection, or mounts change.
 - Keep devcontainer files compact and portable; `README.md` owns explanations.
+- For SBX workload, mixin, profile, or installer changes, follow
+  [the scoped SBX rules](experiments/sbx/AGENTS.md) and its experiment guide.

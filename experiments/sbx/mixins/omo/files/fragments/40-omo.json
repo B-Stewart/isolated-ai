@@ -1,0 +1,3 @@
+{
+  "plugins": ["file:/opt/isoai/mixins/omo/vendor/node_modules/oh-my-opencode-slim"]
+}

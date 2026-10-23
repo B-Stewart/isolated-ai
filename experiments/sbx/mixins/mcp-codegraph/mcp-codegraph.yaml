@@ -1,0 +1,10 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: mixin
+displayName: Codegraph MCP
+args:
+  base_image:
+    default: local/isoai-sbx-base:scaffold
+    pattern: '^[A-Za-z0-9][A-Za-z0-9._:/@-]*$'
+    buildArg: BASE_IMAGE
+provides: ["mcp-codegraph@1.6.2"]

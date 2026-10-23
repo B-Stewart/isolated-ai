@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+"/opt/isoai/bin/tooling-node" /opt/isoai/runtime/assemble-opencode.mjs
+omo_config=/opt/isoai/mixins/omo/oh-my-opencode-slim.json
+if [ -f "$omo_config" ]; then
+    install -m 0600 "$omo_config" "$HOME/.config/opencode/oh-my-opencode-slim.json"
+fi
+exec /opt/isoai/opencode/bin/opencode "$@"

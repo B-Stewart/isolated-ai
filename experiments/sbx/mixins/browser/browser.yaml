@@ -1,0 +1,19 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: mixin
+displayName: Agent Browser
+args:
+  base_image:
+    default: local/isoai-sbx-base:scaffold
+    pattern: '^[A-Za-z0-9][A-Za-z0-9._:/@-]*$'
+    buildArg: BASE_IMAGE
+provides: ["agent-browser@0.39.2"]
+capabilities:
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          - storage.googleapis.com:443
+          - googlechromelabs.github.io:443
+          - cdn.playwright.dev:443
+          - playwright.download.prss.microsoft.com:443

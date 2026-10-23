@@ -1,0 +1,16 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: mixin
+displayName: Context7 MCP
+args:
+  base_image:
+    default: local/isoai-sbx-base:scaffold
+    pattern: '^[A-Za-z0-9][A-Za-z0-9._:/@-]*$'
+    buildArg: BASE_IMAGE
+provides: ["mcp-context7@4.4.4"]
+capabilities:
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          - context7.com:443

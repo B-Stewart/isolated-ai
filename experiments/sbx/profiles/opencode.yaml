@@ -1,0 +1,28 @@
+schemaVersion: "1"
+agent: opencode
+args:
+  workspace:
+    required: true
+    description: Host project directory mounted read-write.
+  base_image:
+    required: true
+    description: Registry-accessible shared base image, preferably pinned by digest.
+workspace: ${{ env.args.workspace }}
+kits:
+  - source: ../workloads/opencode
+    args:
+      base_image: ${{ env.args.base_image }}
+  - source: ../mixins/mcp-context7
+    args:
+      base_image: ${{ env.args.base_image }}
+  - source: ../mixins/mcp-codegraph
+    args:
+      base_image: ${{ env.args.base_image }}
+  - source: ../mixins/skills
+  - source: ../mixins/browser
+    args:
+      base_image: ${{ env.args.base_image }}
+sandboxOptions:
+  skills: "off"
+  cpus: 2
+  memory: 4g

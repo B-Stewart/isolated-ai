@@ -1,0 +1,10 @@
+{
+  "mcp": {
+    "servers": {
+      "context7": {
+        "type": "local",
+        "command": ["/opt/isoai/mixins/context7/context7"]
+      }
+    }
+  }
+}

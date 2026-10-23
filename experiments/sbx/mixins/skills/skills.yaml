@@ -1,0 +1,5 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: mixin
+displayName: OpenCode Skills
+provides: ["opencode-skills@0.1.0"]

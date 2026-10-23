@@ -334,12 +334,12 @@ docker rm -f <container-name>
 #### Experimental: Docker Sandboxes
 
 For an alternative to the host-side launcher, see the
-[SBX experiment guide](experiments/sbx/README.md). It provides Claude Code,
-OpenCode/OMO-slim, and gamedev profiles using thin adapters over the existing
-images, with Windows/WSL setup and explicit development-resource sharing.
-The adapters are separate from the hardened `isoai` images; they do not mount
-the host Docker socket or automatically import host agent state. Existing
-`isoai` and Dev Container behavior is unchanged. See the
+[SBX experiment guide](experiments/sbx/README.md). Its v3 scaffold separates an
+agent-neutral base, a thin OpenCode workload, and selectable OMO-slim, MCP,
+skills, and browser mixins. It is independent of the images above and keeps
+agent configuration inside each sandbox, without a host Docker socket mount
+or host-global MCP registration. Existing `isoai` and Dev Container behavior
+is unchanged. See the guide for build/runtime verification limits and the
 [comparison research](isoai-alternatives-research.md) for the trade-offs.
 
 #### Advanced/manual one-shot alternatives

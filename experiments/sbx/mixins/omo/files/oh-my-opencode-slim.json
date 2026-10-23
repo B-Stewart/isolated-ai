@@ -1,0 +1,5 @@
+{
+  "autoUpdate": false,
+  "multiplexer": {"type": "none"},
+  "disabled_mcps": ["context7", "gh_grep"]
+}

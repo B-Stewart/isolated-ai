@@ -1,0 +1,10 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: mixin
+displayName: Oh My OpenCode Slim
+args:
+  base_image:
+    default: local/isoai-sbx-base:scaffold
+    pattern: '^[A-Za-z0-9][A-Za-z0-9._:/@-]*$'
+    buildArg: BASE_IMAGE
+provides: ["omo@3.0.5"]

@@ -1,0 +1,2 @@
+export PATH="/opt/isoai/bin:$PATH"
+eval "$(/usr/local/bin/mise activate --shims bash)"

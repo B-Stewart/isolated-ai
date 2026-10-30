@@ -20,14 +20,6 @@ RUN --mount=type=bind,source=scripts/image/base/install-system-deps.sh,target=/t
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     bash /tmp/install-system-deps.sh
 
-# Playwright browser system deps (chromium + firefox + webkit). Baked at build
-# time because runtime `playwright install --with-deps` needs sudo, which the
-# hardened devcontainer (no-new-privileges) deliberately blocks.
-RUN --mount=type=bind,source=scripts/image/base/install-playwright-deps.sh,target=/tmp/install-playwright-deps.sh,ro \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    bash /tmp/install-playwright-deps.sh
-
 # Non-root user
 # node:24-slim ships with a `node` user at UID/GID 1000 — remove it so we can
 # reclaim 1000 for `agent` (matching the default Linux/WSL user UID).
@@ -117,23 +109,6 @@ RUN --mount=type=bind,source=scripts/image/base/install-agent-browser.sh,target=
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     bash /tmp/install-agent-browser.sh
-
-# Pre-create the Playwright browser cache dir. Kept as a named volume in the
-# consumer devcontainer (browsers are bulky and not user-edited), so image-side
-# ownership/perms must exist as 1000:1000 for Docker's volume init to honor them.
-# Agent config dirs (~/.claude, ~/.config/opencode, ~/.local/share/opencode) are
-# intentionally NOT pre-created here — they're bind-mounted from the host so
-# config and auth state live alongside the user's native CLI installs.
-RUN mkdir -p /home/agent/.cache/ms-playwright \
-    && chown -R 1000:1000 /home/agent/.cache
-
-# Disable Playwright's stale-browser garbage collection. By default `playwright
-# install` deletes browser revisions not referenced by the *current* package
-# version — which silently wipes other projects' browsers out of the shared
-# `isolated-pw-browsers` cache volume whenever a project on a newer Playwright
-# version installs. With GC off, installs only add revisions; cleanup is manual
-# (`npx playwright uninstall --all` from inside a container) when desired.
-ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 
 # Firewall script — root-owned, executable, dormant unless invoked
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh

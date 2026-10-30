@@ -68,7 +68,6 @@ class ImageInstallerTests(unittest.TestCase):
         expected = {
             "install-npm-tools.sh",
             "install-system-deps.sh",
-            "install-playwright-deps.sh",
             "link-agent-tools.sh",
             "install-runtimes.sh",
             "install-cli-tools.sh",
@@ -78,6 +77,39 @@ class ImageInstallerTests(unittest.TestCase):
         for name in expected:
             with self.subTest(script=name):
                 self.assertIn(f"scripts/image/base/{name}", text)
+
+    def test_playwright_cli_and_hooks_removed_agent_browser_provisioning_remains(self):
+        base = (ROOT / "agentic-base.dockerfile").read_text()
+        npm_tools = (IMAGE_DIR / "base" / "install-npm-tools.sh").read_text()
+        links = (IMAGE_DIR / "base" / "link-agent-tools.sh").read_text()
+        isoai = (ROOT / "scripts" / "isoai").read_text()
+        agent_browser = (IMAGE_DIR / "base" / "install-agent-browser.sh").read_text()
+
+        self.assertIn("npm install -g agent-browser@0", npm_tools)
+        self.assertIn("/usr/local/bin/agent-browser", links)
+        self.assertIn("/home/agent/.local/bin/agent-browser", links)
+        self.assertIn("install-agent-browser.sh", base)
+        self.assertIn("agent-browser install --with-deps", agent_browser)
+        self.assertFalse((IMAGE_DIR / "base" / "install-playwright-deps.sh").exists())
+        self.assertNotIn("@playwright/cli", npm_tools)
+        self.assertNotIn("playwright-cli", links)
+        self.assertNotIn("PLAYWRIGHT_SKIP_BROWSER_GC", base)
+
+        for text in (base, agent_browser, npm_tools, links, isoai):
+            with self.subTest(text=text[:40]):
+                self.assertNotIn("isolated-pw-browsers", text)
+                self.assertNotIn("ms-playwright", text)
+        self.assertNotIn("playwright", isoai.lower())
+
+        for path in (
+            ROOT / ".devcontainer" / "devcontainer.json",
+            ROOT / ".devcontainer" / "devcontainer.firewall.jsonc",
+            ROOT / ".devcontainer" / "devcontainer.gd.jsonc",
+        ):
+            text = path.read_text().lower()
+            with self.subTest(config=path.name):
+                self.assertNotIn("playwright", text)
+                self.assertNotIn("isolated-pw-browsers", text)
 
 
 if __name__ == "__main__":

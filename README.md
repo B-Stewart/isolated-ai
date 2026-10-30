@@ -16,8 +16,7 @@ The image ships:
 | Firebase | `firebase` | CLI | Firebase CLI (`firebase-tools`) for project deploys, auth, and emulator workflows |
 | GitHub CLI | `gh` | CLI | GitHub issues, PRs, checks, releases, and auth-aware repo workflows |
 | .NET SDK | `dotnet` | SDK | .NET development |
-| Playwright | `playwright-cli` | CLI + skills | Browser automation via [Playwright CLI](https://github.com/microsoft/playwright-cli) |
-| agent-browser | `agent-browser` | CLI | Browser automation via Chrome for Testing; Chrome and Linux dependencies are preinstalled |
+| agent-browser | `agent-browser` | CLI | Browser automation CLI; Chrome for Testing and Linux dependencies are preinstalled |
 | uv | `uv` | Python tool manager | Standalone Rust binary, fetches its own Python on demand |
 | Bun | `bun` | JavaScript runtime | Required by oh-my-opencode-slim (its CLI uses a `#!/usr/bin/env bun` shebang); also available on PATH for general use |
 | RTK | `rtk` | CLI token optimizer | Filters/dedups command output before it reaches the LLM context ([rtk-ai/rtk](https://github.com/rtk-ai/rtk)) |
@@ -52,23 +51,7 @@ mkdir -p ~/.agents ~/.claude ~/.config/opencode ~/.local/share/opencode ~/.confi
 touch ~/.claude.json
 ```
 
-**3. Install the Playwright skills.** Runs inside a throwaway container so you don't need Node + npm on the host; the skills land in your bind-mounted `~/.claude/skills/` (and `~/.config/opencode/` if the installer targets it). The `playwright-cli install --skills` step also fetches browser binaries as a side effect, so mount the shared `isolated-pw-browsers` named volume here too — otherwise the download lands in a container layer that's discarded with `--rm` and the dev container has to re-download on first attach.
-
-`-w /home/agent` overrides the image's `WORKDIR /workspace`. `playwright-cli install --skills` writes skills *relative to `$PWD`* (it has no `--global` mode), and `/workspace` isn't bind-mounted in this bootstrap invocation — so without the workdir override, the install reports success but the skills land in an ephemeral container layer and disappear with `--rm`. Pointing `$PWD` at `/home/agent` makes the relative `.claude/skills/playwright-cli` resolve into the bind-mounted home and reach your host.
-
-```bash
-docker run --rm \
-  -w /home/agent \
-  -v "$HOME/.claude:/home/agent/.claude" \
-  -v "$HOME/.config/opencode:/home/agent/.config/opencode" \
-  -v isolated-pw-browsers:/home/agent/.cache/ms-playwright \
-  braydens/agentic-base:latest \
-  playwright-cli install --skills
-```
-
-Re-run the same command later to update skills; subsequent runs reuse anything already in the cache volume.
-
-**4. Register the MCP servers.** Once is enough — registrations persist in your host `~/.claude.json` and every container plus your native `claude` will see them:
+**3. Register the MCP servers.** Once is enough — registrations persist in your host `~/.claude.json` and every container plus your native `claude` will see them:
 
 ```bash
 # context7 — no args
@@ -103,7 +86,7 @@ For OpenCode, edit `~/.config/opencode/opencode.json` directly — OpenCode has 
 
 Inspect connection state with `opencode mcp list`; troubleshoot a misbehaving server with `opencode mcp debug <name>`.
 
-**5. Install oh-my-opencode-slim agents.** This OpenCode plugin adds a team of specialist subagents (Orchestrator, Explorer, Oracle, Librarian, Designer, Fixer) and writes config to `~/.config/opencode/oh-my-opencode-slim.json` plus skill assets under the bind-mounted opencode dirs. Run its `install` subcommand once in a throwaway container — same shape as the Playwright-skills step:
+**4. Install oh-my-opencode-slim agents.** This OpenCode plugin adds a team of specialist subagents (Orchestrator, Explorer, Oracle, Librarian, Designer, Fixer) and writes config to `~/.config/opencode/oh-my-opencode-slim.json` plus skill assets under the bind-mounted opencode dirs. Run its `install` subcommand once in a throwaway container:
 
 ```bash
 docker run -it --rm \
@@ -113,9 +96,9 @@ docker run -it --rm \
   oh-my-opencode-slim install
 ```
 
-`-it` (rather than the bare `--rm` used in step 3) because the installer prompts for model assignments per agent role. Re-run the same command later to change assignments or pick up new presets after a base-image rebuild.
+`-it` because the installer prompts for model assignments per agent role. Re-run the same command later to change assignments or pick up new presets after a base-image rebuild.
 
-**6. Install the RTK hook.** RTK's `init -g` writes a `PreToolUse` hook into `~/.claude/settings.json` so every bash invocation gets passed through the token-optimizing proxy. Run it in a throwaway container — same shape as the Playwright skills step — and it persists for every container plus your native `claude`:
+**5. Install the RTK hook.** RTK's `init -g` writes a `PreToolUse` hook into `~/.claude/settings.json` so every bash invocation gets passed through the token-optimizing proxy. Run it in a throwaway container; it persists for every container plus your native `claude`:
 
 ```bash
 docker run --rm \
@@ -133,7 +116,7 @@ The hook calls `rtk` on `PATH`. In the base image that's `/usr/local/bin/rtk`. *
 
 Inspect token savings with `rtk gain`.
 
-**7. Authenticate GitHub CLI if needed.** `gh` stores auth/config in the bind-mounted `~/.config/gh`, so one login survives rebuilds and is shared with native WSL usage:
+**6. Authenticate GitHub CLI if needed.** `gh` stores auth/config in the bind-mounted `~/.config/gh`, so one login survives rebuilds and is shared with native WSL usage:
 
 ```bash
 gh auth login
@@ -141,7 +124,7 @@ gh auth login
 
 Inside a devcontainer, VS Code's git credential forwarding handles normal `git` auth, but `gh` still reads its own config directory for issue/PR/check/release workflows. For throwaway standalone containers, mount `~/.config/gh` the same way as the devcontainer.
 
-**8. Initialize CodeGraph per project if needed.** The `codegraph` binary is available on PATH and defaults to local project state under `./.codegraph/` (for example `./.codegraph/codegraph.db`). Run it inside each workspace you want indexed:
+**7. Initialize CodeGraph per project if needed.** The `codegraph` binary is available on PATH and defaults to local project state under `./.codegraph/` (for example `./.codegraph/codegraph.db`). Run it inside each workspace you want indexed:
 
 ```bash
 codegraph init
@@ -149,15 +132,7 @@ codegraph init
 
 The optional global home state at `~/.codegraph/` is bind-mounted from the host. The image also sets `CODEGRAPH_TELEMETRY=0`, `DO_NOT_TRACK=1`, and `CODEGRAPH_NO_DAEMON=1` for quieter, container-friendly runs.
 
-**9. Playwright browsers — usually handled for you.** The shipped `devcontainer.json` includes a `postCreateCommand` that installs the project's pinned Chromium revision automatically whenever the workspace's `package.json` references Playwright. Browsers land in `~/.cache/ms-playwright/`, backed by the `isolated-pw-browsers` named volume so they persist across rebuilds without polluting your host home. See [Playwright browsers — cache volume + auto-install](#playwright-browsers--cache-volume--auto-install) for the rationale.
-
-For standalone `docker run` invocations (or to manually add Firefox/WebKit), do it from inside a running container:
-
-```bash
-npx playwright install chromium    # or firefox / webkit
-```
-
-Do **not** pass `--with-deps` — that half needs sudo, which the hardened defaults (`--security-opt=no-new-privileges:true`) block. The system libs are already baked into the image.
+Project-specific Playwright browsers are not provisioned automatically. Install them using the project's own instructions. The image's `agent-browser` command and its Chrome for Testing browser, including Linux dependencies, are preinstalled and ready to use.
 
 ### Use as a Dev Container base
 
@@ -213,6 +188,28 @@ isoai --image=gd --code -- opencode
 isoai -i=gd -c -- opencode
 ```
 
+Host Docker socket access is off by default. Opt in per invocation with `--docker`
+or `-d`; this works with base and `gd`, with commands, and with VS Code:
+
+```bash
+isoai -d
+isoai --docker -- opencode
+isoai -d --image gd -- godot --headless --path "$PWD" --import
+isoai -c -d --image=gd
+```
+
+The socket grants the container control of the host Docker daemon and is a
+powerful host privilege. The launcher checks an existing container's saved
+Docker mount before reuse/start: its mode must match this invocation. Older
+socket-enabled containers remain reusable by running `isoai -d`. A mismatch
+is refused without starting, execing, deleting, or recreating the container;
+mounts cannot be changed in place. The container name/identity is unchanged.
+To change modes, first preserve any writable-layer state you need, then
+explicitly remove/recreate the container in the intended mode. Omitting `-d`
+creates a socket-free container by default. This controls only the standard
+`/var/run/docker.sock` bind; it does not guarantee the container lacks every
+possible alternate Docker endpoint.
+
 The only supported image selector is `gd`. `isoai help`, `isoai --help`, and
 `isoai -h` print the launcher's built-in reference without requiring Docker.
 Launcher options can appear in any order before `--`; everything after `--`
@@ -263,14 +260,22 @@ rest of the command inside it as `agent`. This uses an undocumented VS Code
 remote URI format and requires the Dev Containers extension plus the `code`
 and `xxd` commands on the host. It may break when VS Code changes.
 
-The launcher creates the required host mount sources before Docker starts, including `~/.gitconfig`, mounts the current working directory at the identical absolute path inside the container, and mirrors the default `.devcontainer/devcontainer.json` mounts and `runArgs`. It bind-mounts `~/.gitconfig` at `/home/agent/.gitconfig`. On Linux and WSL, when host Python 3 and a reachable `SSH_AUTH_SOCK` are available, it uses the adjacent `scripts/isoai-ssh-agent.py` helper to relay SSH-agent requests. The stable host directory `$HOME/.local/state/isoai/ssh/$container_name` is mounted read-only at `/run/isoai/ssh`, and the container uses `SSH_AUTH_SOCK=/run/isoai/ssh/agent.sock`. The relay reuses that directory and picks up the current upstream socket for new connections; its socket file may be replaced, but the directory must remain for the stopped container's lifetime. An unsafe or uncreatable relay directory prevents startup. If the host agent is unavailable, the helper disables forwarding and warns without blocking startup. If Python 3 or the helper is unavailable, startup continues with a warning, but an existing relay may still forward to its previous agent because it could not be refreshed. `~/.config/gh` remains bind-mounted for GitHub HTTPS credentials and `gh` workflows.
+The launcher creates the required host mount sources before Docker starts, including `~/.gitconfig`, mounts the current working directory at the identical absolute path inside the container, and mirrors the default `.devcontainer/devcontainer.json` mounts and `runArgs`. It bind-mounts `~/.gitconfig` at `/home/agent/.gitconfig`; the host Docker socket is mounted only when `--docker`/`-d` is supplied. On Linux and WSL, when host Python 3 and a reachable `SSH_AUTH_SOCK` are available, it uses the adjacent `scripts/isoai-ssh-agent.py` helper to relay SSH-agent requests. The stable host directory `$HOME/.local/state/isoai/ssh/$container_name` is mounted read-only at `/run/isoai/ssh`, and the container uses `SSH_AUTH_SOCK=/run/isoai/ssh/agent.sock`. The relay reuses that directory and picks up the current upstream socket for new connections; its socket file may be replaced, but the directory must remain for the stopped container's lifetime. An unsafe or uncreatable relay directory prevents startup. If the host agent is unavailable, the helper disables forwarding and warns without blocking startup. If Python 3 or the helper is unavailable, startup continues with a warning, but an existing relay may still forward to its previous agent because it could not be refreshed. `~/.config/gh` remains bind-mounted for GitHub HTTPS credentials and `gh` workflows.
 
-It starts a persistent, deterministically named container and prints its name. Running it again from the same directory reuses that container. The Playwright `postCreateCommand` check runs only when the container is first created. Docker cannot retrofit mounts onto an existing container. The removal command below discards the container's writable layer; use it only when that loss is acceptable. For legacy SSH-mount failures, follow the preservation-first migration instructions below instead.
+It starts a persistent, deterministically named container and prints its name. Running it again from the same directory and Docker-socket mode reuses that container. Docker cannot retrofit mounts onto an existing container, so a mode mismatch is refused rather than silently changing or deleting it. To recreate explicitly, use the known container name (or find it with `docker ps -a --filter 'name=isolated-ai-'`); do not derive it from `isoai` when the mode mismatch makes that invocation fail. If its writable layer matters, make and validate a private snapshot first:
 
 ```bash
-container_name=$(isoai | awk '/^Container: / { print $2 }')
+container_name='your-container-name'
+snapshot_tag='local/isoai-snapshot:temporary'
+docker commit "$container_name" "$snapshot_tag"
+```
+
+The snapshot retains the writable layer, not bind-mounted workspace/config data; keep it private because it may contain secrets. Only remove the original once its state is preserved or discarding it is acceptable; the next invocation's `-d` choice determines the new standard socket mount. For legacy SSH-mount failures, follow the preservation-first migration instructions below instead.
+
+```bash
+container_name='your-container-name'
 docker rm -f "$container_name"
-isoai
+isoai # socket-free by default; add -d only if host Docker access is intended
 ```
 
 The relay forwards signing authority: read-only mounting its directory does not prevent the container from asking the host agent to sign. The container's `agent` user (UID 1000 in this image) must match the host socket relay's permissions; do not make the socket world-accessible. Mount only the dedicated relay directory, not all of `/tmp` or `~/.ssh`.
@@ -437,7 +442,6 @@ and are passed explicitly to the relevant scripts.
 |---|---|
 | `base/install-npm-tools.sh` | Agent, plugin, MCP, browser CLI, Firebase, and CodeGraph npm packages in the builder stage |
 | `base/install-system-deps.sh` | Debian dependencies and system-wide Git LFS setup |
-| `base/install-playwright-deps.sh` | Playwright browser system libraries, not project browser downloads |
 | `base/link-agent-tools.sh` | Global and agent-local executable links after copying the builder's npm packages |
 | `base/install-runtimes.sh` | Corepack, uv, .NET SDK, and Bun |
 | `base/install-cli-tools.sh` | RTK, Trivy, GitHub CLI, and Docker CLI/plugins/group setup |
@@ -477,12 +481,10 @@ snapshot, not an additional version configuration:
 | OpenCode CLI | `@opencode/cli@2` | 2.0.32 | [npm registry](https://registry.npmjs.org/) |
 | oh-my-opencode-slim | `oh-my-opencode-slim@3` | 3.0.5 | [npm registry](https://registry.npmjs.org/) |
 | Context7 MCP | `@upstash/context7-mcp@4` | 4.4.4 | [npm registry](https://registry.npmjs.org/) |
-| Playwright CLI | `@playwright/cli@0` | 0.1.22 | [npm registry](https://registry.npmjs.org/) |
 | agent-browser | `agent-browser@0` | 0.39.1 | [npm registry](https://registry.npmjs.org/) |
 | Figma MCP | `figma-developer-mcp@0` | 0.13.2 | [npm registry](https://registry.npmjs.org/) |
 | Firebase CLI | `firebase-tools@15` | 15.34.0 | [npm registry](https://registry.npmjs.org/) |
 | CodeGraph | `@colbymchenry/codegraph@1` | 1.6.2 | [npm registry](https://registry.npmjs.org/) |
-| Playwright system dependencies | `playwright@1` | 1.64.1 | [npm registry](https://registry.npmjs.org/) |
 | uv | `UV_VERSION=0.13.3` | 0.13.3 | [uv releases](https://github.com/astral-sh/uv/releases) |
 | RTK | `RTK_VERSION=v1.0.1` | v1.0.1 | [RTK releases](https://github.com/rtk-ai/rtk/releases) |
 | Bun | `BUN_VERSION=1.4.3` | 1.4.3 | [Bun releases](https://github.com/oven-sh/bun/releases) |
@@ -618,8 +620,6 @@ The image expects **agent config and auth to be bind-mounted from the host**, no
 | `~/.config/gh/` | `/home/agent/.config/gh/` | GitHub CLI auth/config (`gh auth login`) |
 | `~/.codegraph/` | `/home/agent/.codegraph/` | Optional CodeGraph global state/config; project indexes stay in each workspace's `./.codegraph/` |
 
-The Playwright browser cache (`~/.cache/ms-playwright/`) stays on a named volume (`isolated-pw-browsers`) — browsers are bulky binaries, not user-edited config, and you don't want them living in your host home.
-
 **Why bind mounts instead of named volumes.** One source of truth between containerized agents and native Claude/OpenCode/Firebase/GitHub CLI/CodeGraph running directly on the WSL host. A skill installed once on the host is visible in every container; an MCP server registered in any container is visible to the host CLI; `firebase login`, `gh auth login`, and update-check metadata persist across rebuilds. Curated parts of `~/.claude/` (`settings.json`, `skills/`, `commands/`) can be checked into a dotfiles repo.
 
 **Trade-off being made.** All containers + native usage share one global state — there's no per-project isolation of `~/.claude.json` or Firebase's configstore login. That's the intent, not a bug. If you want per-project isolation, swap the bind mounts for named volumes.
@@ -632,48 +632,15 @@ The Playwright browser cache (`~/.cache/ms-playwright/`) stays on a named volume
 
 **Belt-and-suspenders for the bind-mount sources (`initializeCommand`).** When a bind-mount source path doesn't exist on the host, the Docker daemon auto-creates it — but as root, since dockerd runs as root, leaving the container's `agent` user unable to write into the supposed config dir. For the `~/.claude.json` file-bind specifically, Docker can't tell file-vs-dir intent and will create it as an empty *directory*, which silently breaks both agents. Both devcontainer variants set `initializeCommand` to `mkdir -p` the dirs and `touch ~/.claude.json` on the host *before* mounts resolve — this also keeps Firebase, GitHub CLI, and CodeGraph state writable. Even if you skipped first-run §step 2, the devcontainer attach won't leave you with root-owned auto-created paths. The standalone `docker run` invocations below have no such safety net, so for those the first-run mkdir is still required.
 
-### Playwright — CLI + skills, not MCP
+### Browser tooling
 
-The image used to ship `@playwright/mcp`. Upstream now points coding agents at [Playwright CLI](https://github.com/microsoft/playwright-cli) with **skills** instead. From the playwright-cli README:
-
-> Modern coding agents increasingly favor CLI–based workflows exposed as SKILLs over MCP because CLI invocations are more token-efficient: they avoid loading large tool schemas and verbose accessibility trees into the model context.
-
-[Playwright MCP](https://github.com/microsoft/playwright-mcp) is still alive for long-running-state use cases (exploratory automation, self-healing tests). For day-to-day "drive a browser from inside an agent," CLI + skills wins on token economy, which is why this image now installs `@playwright/cli` and ships skills.
-
-**Skills install via the image, not the host.** Step 3 of [First-run setup](#first-run-setup) runs `playwright-cli install --skills` inside a throwaway container, writing into the host-mounted `~/.claude/` (and `~/.config/opencode/`). This avoids forcing Node + npm onto the host just to bootstrap. Re-run the same command to pull skill updates after a base-image rebuild.
-
-### Playwright browsers — cache volume + auto-install
-
-Playwright's project-versioned browser binaries (Chromium, Firefox, WebKit) are
-**not** baked into the image — only the system libs they need are. They live in
-`~/.cache/ms-playwright/`, backed by the `isolated-pw-browsers` named volume so they
-survive container rebuilds. Separately, Agent Browser's Chrome for Testing is
-baked in by `scripts/image/base/install-agent-browser.sh`; it does not replace
-Playwright's project-specific revisions.
-
-**Why not bake them in.** Playwright pins browser binaries to a *specific revision per Playwright version* (e.g. Playwright 1.49 wants `chromium-1140`, 1.51 wants `chromium-1155`). Baking one revision into the image would help only when a project happens to use that exact Playwright version; every other project would re-download regardless. The size cost (~300MB–1GB compressed for all three engines) buys very little practical win. The cache volume covers the actually-useful case: "don't re-download what's already on disk across rebuilds."
-
-**The post-create auto-install.** The shipped `devcontainer.json` includes a `postCreateCommand` that runs:
-
-```bash
-if [ -f package.json ] && grep -q '"playwright"' package.json; then
-  npx --yes playwright install chromium
-fi
-```
-
-This fires once on container create, only if the workspace's `package.json` references Playwright. It downloads the project's pinned Chromium revision into the cache (no-op if it's already there). After the first attach you never see the "browser not found" prompt — projects on the same Playwright version reuse the cache, new versions add another revision next to the existing ones. Standalone `docker run` invocations don't get this — for them it's still a one-time `npx playwright install` after attaching.
-
-**Firewall caveat.** `cdn.playwright.dev` (the browser download CDN) is not in the default firewall allowlist. With the firewall enabled, either add `-e FIREWALL_EXTRA_HOSTS=cdn.playwright.dev` or install browsers once with the firewall off, then enable it.
-
-**Stale-browser GC is disabled.** The image sets `PLAYWRIGHT_SKIP_BROWSER_GC=1`. By default `playwright install` deletes any browser revision not referenced by the *current* package version — which, against a shared cache volume, means a project on Playwright 1.51 wipes out the chromium revision that the project next door pinned to 1.49 the moment it installs. With GC off, installs only ever add revisions; nothing else's browsers get evicted out from under it. Cleanup becomes manual (see below) instead of automatic.
-
-**Cache cleanup.** Over time the volume accumulates revisions from every Playwright version you've touched. If it gets uncomfortable, `npx playwright uninstall --all` inside a container clears it, then re-run install for the versions you currently care about.
+The image does not install the standalone Playwright CLI, provision project-specific Playwright browser binaries, create a Playwright browser cache volume, or run Playwright browser-install hooks when a workspace starts. The `agent-browser` npm CLI is included with its Chrome for Testing browser and required Linux dependencies already installed at build time by `agent-browser install --with-deps`. No manual `agent-browser install` is needed. Project-specific Playwright browser setup remains under each project's control; in hardened containers, installing additional OS packages may require a project-specific image or another privileged setup.
 
 ### Workspace path and Docker-out-of-Docker
 
-The default `devcontainer.json` mounts the workspace at the **same path inside the container as it has on the host** (`workspaceFolder` and `workspaceMount` both use `${localWorkspaceFolder}`) rather than the conventional `/workspace`. This matters as soon as you do Docker-out-of-Docker — running `docker` or `docker compose` from inside the container against the host's daemon via the mounted `/var/run/docker.sock`.
+The default `devcontainer.json` mounts the workspace at the **same path inside the container as it has on the host** (`workspaceFolder` and `workspaceMount` both use `${localWorkspaceFolder}`) rather than the conventional `/workspace`. The shipped Dev Container configs do not mount the host Docker socket. For explicit Docker-out-of-Docker opt-in, add `"source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"` to the config's `mounts` array and rebuild/reopen the Dev Container. Existing Dev Containers must be rebuilt to remove a socket mount inherited from an older config; editing the config does not retrofit an existing container.
 
-Bind mounts in a `docker-compose.yml` are resolved by the daemon that runs them, which here is the **host** daemon. A relative mount like `./data:/data` expands to `$PWD/data` inside the container, and the host daemon then looks for that exact path on the host filesystem. If the container's `$PWD` were `/workspace`, the host would look for `/workspace/data` and find nothing. Mounting at the original host path keeps `$PWD` valid on both sides and lets compose stacks defined inside the container "just work" against the host daemon.
+When that socket is explicitly mounted, the container's Docker CLI can operate the **host** daemon. Bind mounts in a `docker-compose.yml` are then resolved by that daemon. A relative mount like `./data:/data` expands to `$PWD/data` inside the container, and the host daemon then looks for that exact path on the host filesystem. If the container's `$PWD` were `/workspace`, the host would look for `/workspace/data` and find nothing. Mounting at the original host path keeps `$PWD` valid on both sides and lets compose stacks defined inside the container work against the host daemon.
 
 The same setup also sets `COMPOSE_PROJECT_NAME` to the workspace folder's basename, so containers, networks, and volumes created by compose stacks from different repos using this pattern don't collide on the shared host daemon.
 

@@ -4,15 +4,16 @@ set -Eeuo pipefail
 
 usage() {
   printf 'Usage: isoai [help|--help|-h]\n'
-  printf '       isoai [--code|-c] [--image gd|-i gd] [-- <command> [args...]]\n'
-  printf '       isoai [--code|-c] [--image=gd|-i=gd] [-- <command> [args...]]\n'
+  printf '       isoai [--code|-c] [--docker|-d] [--image gd|-i gd] [-- <command> [args...]]\n'
+  printf '       isoai [--code|-c] [--docker|-d] [--image=gd|-i=gd] [-- <command> [args...]]\n'
   printf '\n'
   printf 'Launches an isolated-ai container (default image: braydens/agentic-base:latest).\n'
   printf 'The only supported image selector is gd (braydens/agentic-gamedev:latest).\n'
-  printf '%s\n' '--code opens VS Code; a command after -- runs in the container.'
+  printf '%s\n' '--code opens VS Code; --docker grants access to the host Docker socket; a command after -- runs in the container.'
 }
 
 launch_code=false
+docker_access=false
 command_mode=false
 image_selector=''
 while [[ $# -gt 0 ]]; do
@@ -28,6 +29,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --code|-c)
       launch_code=true
+      shift
+      ;;
+    --docker|-d)
+      docker_access=true
       shift
       ;;
     --image=*|-i=*)
@@ -132,6 +137,37 @@ if [[ $image_selector == gd ]]; then
   container_name+="-gd"
 fi
 
+container_exists=false
+if docker container inspect "$container_name" >/dev/null 2>&1; then
+  container_exists=true
+  if ! saved_mount=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/run/docker.sock"}}{{printf "%s|%s\n" .Type .Source}}{{end}}{{end}}' "$container_name" 2>&1); then
+    printf 'isoai: could not inspect saved mounts for %s; refusing to reuse or start it. The container was left unchanged; preserve its writable-layer state before any explicit recreation.\n' "$container_name" >&2
+    exit 1
+  fi
+
+  saved_docker_access=false
+  case $saved_mount in
+    '') ;;
+    'bind|/var/run/docker.sock') saved_docker_access=true ;;
+    *)
+      printf 'isoai: %s has an unexpected mount inspection result for /var/run/docker.sock (%s); refusing to reuse or start it. The container was left unchanged; inspect and preserve its writable-layer state before any explicit recreation.\n' "$container_name" "$saved_mount" >&2
+      exit 1
+      ;;
+  esac
+  if [[ $saved_docker_access != "$docker_access" ]]; then
+    if [[ $saved_docker_access == true ]]; then
+      requested_access='without host Docker socket access'
+      mode_guidance=' Rerun with --docker/-d to reuse this container; preserve its writable layer before explicitly recreating it without socket access.'
+    else
+      requested_access='with host Docker socket access'
+      mode_guidance=' Use --docker/-d to opt in when creating a replacement.'
+    fi
+    printf 'isoai: %s has saved host Docker socket access=%s, but this invocation requests %s; refusing to reuse or start it. The container was left unchanged; preserve its writable-layer state before any explicit recreation.%s\n' \
+      "$container_name" "$saved_docker_access" "$requested_access" "$mode_guidance" >&2
+    exit 1
+  fi
+fi
+
 ssh_agent_dir="$home/.local/state/isoai/ssh/$container_name"
 ssh_agent_path=/run/isoai/ssh/agent.sock
 ssh_upstream=''
@@ -183,9 +219,10 @@ mount_args=(
   --mount "type=bind,src=$home/.config/gh,dst=/home/agent/.config/gh"
   --mount "type=bind,src=$home/.gitconfig,dst=/home/agent/.gitconfig"
   --mount "type=bind,src=$home/.codegraph,dst=/home/agent/.codegraph"
-  --mount type=volume,src=isolated-pw-browsers,dst=/home/agent/.cache/ms-playwright
-  --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock
 )
+if [[ $docker_access == true ]]; then
+  mount_args+=(--mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock)
+fi
 
 run_args=(
   '--label=com.docker.compose.project=agentic-isolated-ai'
@@ -198,7 +235,6 @@ run_args=(
 
 mount_args+=(--mount "type=bind,src=$ssh_agent_dir,dst=/run/isoai/ssh,readonly")
 
-created=false
 create_container() {
   docker run -d \
     --name "$container_name" \
@@ -209,10 +245,9 @@ create_container() {
     "${mount_args[@]}" \
     "$image" \
     tail -f /dev/null >/dev/null
-  created=true
 }
 
-if docker container inspect "$container_name" >/dev/null 2>&1; then
+if [[ $container_exists == true ]]; then
   if [[ "$(docker inspect -f '{{.State.Running}}' "$container_name")" != true ]]; then
     if start_error=$(docker start "$container_name" 2>&1 >/dev/null); then
       :
@@ -231,11 +266,6 @@ if docker container inspect "$container_name" >/dev/null 2>&1; then
   fi
 else
   create_container
-fi
-
-if [[ "$created" == true ]]; then
-  docker exec -u agent -w "$workspace" "$container_name" \
-    sh -c 'if [ -f package.json ] && grep -q '"'"'"playwright"'"'"' package.json; then npx --yes playwright install chromium; fi'
 fi
 
 if [[ "$launch_code" == true ]]; then

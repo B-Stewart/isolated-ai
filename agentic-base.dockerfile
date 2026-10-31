@@ -60,27 +60,21 @@ COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN --mount=type=bind,source=scripts/image/base/link-agent-tools.sh,target=/tmp/link-agent-tools.sh,ro \
     bash /tmp/link-agent-tools.sh
 
-# Installer version arguments are passed explicitly to the build-only scripts.
-ARG UV_VERSION=0.13.3
-ARG DOTNET_VERSION=10.0
-ARG BUN_VERSION=1.4.3
-ARG RTK_VERSION=v1.0.1
-ARG SPEC_KIT_TAG=v0.10.2
 # Match this group id to the mounted Docker socket on native Linux hosts.
 ARG DOCKER_GID=999
 
 # Corepack, uv, .NET SDK, and Bun. Project packageManager choices remain
-# project-controlled; standalone installer versions come from these build args.
+# project-controlled; standalone versions use selectors owned by the installer.
 RUN --mount=type=bind,source=scripts/image/base/install-runtimes.sh,target=/tmp/install-runtimes.sh,ro \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    bash /tmp/install-runtimes.sh "${UV_VERSION}" "${DOTNET_VERSION}" "${BUN_VERSION}"
+    bash /tmp/install-runtimes.sh
 
 # RTK, Trivy, GitHub CLI, and Docker CLI/Compose tools.
 RUN --mount=type=bind,source=scripts/image/base/install-cli-tools.sh,target=/tmp/install-cli-tools.sh,ro \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    bash /tmp/install-cli-tools.sh "${RTK_VERSION}" "${DOCKER_GID}"
+    bash /tmp/install-cli-tools.sh "${DOCKER_GID}"
 
 # Python tools installed via `uv tool install` into a shared, image-baked
 # location. Venvs live at /opt/uv-tools (root-owned, world-readable); shims
@@ -92,15 +86,10 @@ ENV UV_TOOL_DIR=/opt/uv-tools
 ENV UV_TOOL_BIN_DIR=/usr/local/bin
 
 # spec-kit (CLI: `specify`).
-# spec-kit isn't published to PyPI by the upstream maintainer (the `specify-cli`
-# name on PyPI is owned by an unrelated third party), so install from git at a
-# pinned tag. Previously this resolved the latest tag dynamically via the GitHub
-# API, but `api.github.com` rate-limits/blocks anonymous build-time calls,
-# bricking the build. Bump SPEC_KIT_TAG manually when a new release is wanted —
-# see https://github.com/github/spec-kit/releases.
+# The install script owns the bounded PyPI version selector.
 RUN --mount=type=bind,source=scripts/image/base/install-spec-kit.sh,target=/tmp/install-spec-kit.sh,ro \
     --mount=type=cache,target=/root/.cache/uv \
-    bash /tmp/install-spec-kit.sh "${SPEC_KIT_TAG}"
+    bash /tmp/install-spec-kit.sh
 
 # Bake agent-browser's Chrome for Testing download and Linux dependencies into
 # the image. HOME/XDG_CACHE_HOME keep its browser and runtime state under the

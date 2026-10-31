@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Interface: SPEC_KIT_TAG (passed by the Dockerfile).
-spec_kit_tag=$1
-uv tool install specify-cli \
-    --from "git+https://github.com/github/spec-kit.git@${spec_kit_tag}"
+# Follow https://github.com/github/spec-kit/blob/main/docs/install/pypi.md.
+# Bound the major version to avoid unreviewed breaking upgrades.
+uv tool install 'specify-cli>=1,<2'

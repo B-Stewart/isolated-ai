@@ -435,7 +435,8 @@ scripts/
 **Ownership:** Dockerfiles define build stages, installation order, cache mounts,
 build arguments, image environment, users, and runtime setup. Installer scripts
 define package selectors, repositories, downloads, and installation commands.
-Existing exact-version and platform build arguments remain in the Dockerfiles
+Base tool version bounds live in the installers, not Docker build arguments.
+The remaining platform and gamedev version arguments stay in the Dockerfiles
 and are passed explicitly to the relevant scripts.
 
 | Installer under `scripts/image/` | Responsibility |
@@ -445,7 +446,7 @@ and are passed explicitly to the relevant scripts.
 | `base/link-agent-tools.sh` | Global and agent-local executable links after copying the builder's npm packages |
 | `base/install-runtimes.sh` | Corepack, uv, .NET SDK, and Bun |
 | `base/install-cli-tools.sh` | RTK, Trivy, GitHub CLI, and Docker CLI/plugins/group setup |
-| `base/install-spec-kit.sh` | spec-kit from its pinned upstream Git tag |
+| `base/install-spec-kit.sh` | Spec Kit from PyPI via uv, bounded to major version 1 |
 | `base/install-agent-browser.sh` | Agent Browser's Chrome for Testing and Linux dependencies |
 | `gamedev/install-system-deps.sh` | Game-development libraries and the additional .NET runtime |
 | `gamedev/install-godot.sh` | Checksum-validated Godot .NET editor |
@@ -470,10 +471,13 @@ selectors, download checksums, and explicit build-argument overrides intact.
 
 Image-owned npm tools use major-version selectors rather than `@latest`, so a
 rebuild can receive updates within the selected major without silently moving
-to a later major. Exact standalone installer pins require an explicit Dockerfile
-ARG bump. The authoritative selectors live in `scripts/image/base/`; ARG defaults
-live in the root Dockerfiles. The following release values are a review-date
-snapshot, not an additional version configuration:
+to a later major. Spec Kit follows the same policy with a Python package version
+range. uv, Bun, and RTK resolve the newest stable Git tag within their selected
+major before invoking the upstream installers; prereleases are excluded and no
+GitHub API lookup is needed. .NET uses the signed APT repository's SDK channel.
+The authoritative base-tool selectors live in `scripts/image/base/`. The
+following release values are a review-date snapshot, not an additional version
+configuration:
 
 | Tool | Selector | Current stable | Source |
 |---|---|---:|---|
@@ -485,9 +489,11 @@ snapshot, not an additional version configuration:
 | Figma MCP | `figma-developer-mcp@0` | 0.13.2 | [npm registry](https://registry.npmjs.org/) |
 | Firebase CLI | `firebase-tools@15` | 15.34.0 | [npm registry](https://registry.npmjs.org/) |
 | CodeGraph | `@colbymchenry/codegraph@1` | 1.6.2 | [npm registry](https://registry.npmjs.org/) |
-| uv | `UV_VERSION=0.13.3` | 0.13.3 | [uv releases](https://github.com/astral-sh/uv/releases) |
-| RTK | `RTK_VERSION=v1.0.1` | v1.0.1 | [RTK releases](https://github.com/rtk-ai/rtk/releases) |
-| Bun | `BUN_VERSION=1.4.3` | 1.4.3 | [Bun releases](https://github.com/oven-sh/bun/releases) |
+| Spec Kit | `specify-cli>=1,<2` | 1.2.5 (reviewed 2026-10-31) | [Official PyPI install guide](https://github.com/github/spec-kit/blob/main/docs/install/pypi.md) |
+| uv | stable `0.*` Git tags | 0.13.6 (verified 2026-10-31) | [uv releases](https://github.com/astral-sh/uv/releases) |
+| .NET SDK | `dotnet-sdk-10.0` | 10.0.403 (verified 2026-10-31) | [Microsoft Debian packages](https://learn.microsoft.com/en-us/dotnet/core/install/linux-debian) |
+| RTK | stable `v1.*` Git tags | v1.1.0 (reviewed 2026-10-31) | [RTK releases](https://github.com/rtk-ai/rtk/releases) |
+| Bun | stable `bun-v1.*` Git tags | 1.4.4 (verified 2026-10-31) | [Bun releases](https://github.com/oven-sh/bun/releases) |
 | Trivy | `trivy=0.*` | 0.76.0 | [Trivy releases](https://github.com/aquasecurity/trivy/releases) |
 | GitHub CLI | `gh=2.*` | 2.102.0 | [GitHub CLI releases](https://github.com/cli/cli/releases) |
 | Docker CLI | `docker-ce-cli=5:29.*` | 29.9.1 | [Docker Debian repository](https://download.docker.com/linux/debian/) |
@@ -495,9 +501,9 @@ snapshot, not an additional version configuration:
 | Docker Buildx plugin | `docker-buildx-plugin=0.*` | 0.38.0 | [Docker Debian repository](https://download.docker.com/linux/debian/) |
 
 Major selectors are compatibility bounds, not exact locks: they do not pin
-transitive dependencies, and `@0` / `0.*` can still accept breaking minor
-releases before 1.0. Debian system libraries remain distro-managed. Node 24
-remains the chosen LTS line; spec-kit, Godot, and Blender retain their existing
+transitive dependencies, and `@0` / `0.*` (including uv) can still accept breaking
+minor releases before 1.0. Debian system libraries remain distro-managed. Node 24
+remains the chosen LTS line; Godot and Blender retain their existing
 explicit version pins, and .NET retains its configured channels. Project
 `packageManager` choices remain project-controlled.
 
@@ -506,6 +512,9 @@ Debian package epoch, not its upstream major. If a repository stops publishing
 a matching version, the build fails rather than falling back to a newer major.
 The release column records upstream versions; APT repositories may lag, so builds
 select matching versions advertised by their configured package indexes.
+The Git-tag selectors likewise fail if no matching stable tag exists or its
+release assets are unavailable; they never fall back to an unbounded latest.
+RTK's upstream installer continues to verify release archive SHA-256 checksums.
 
 Build the base image:
 
@@ -513,9 +522,9 @@ Build the base image:
 docker build -f agentic-base.dockerfile -t braydens/agentic-base:latest .
 ```
 
-Rebuild with `--no-cache` to refresh range-pinned npm/APT tools. This does not
-change the exact uv, RTK, or Bun versions; bump their ARGs in
-`agentic-base.dockerfile` when you explicitly want a newer release:
+Rebuild with `--no-cache` to refresh tools within their configured bounds,
+including uv, .NET, Bun, RTK, and Spec Kit. Edit the installer selectors when
+intentionally moving to a newer major; there are no base-tool version ARGs:
 
 ```bash
 docker build --no-cache -f agentic-base.dockerfile -t braydens/agentic-base:latest .

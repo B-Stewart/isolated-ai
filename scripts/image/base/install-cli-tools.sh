@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Interface: RTK_VERSION DOCKER_GID (passed by the Dockerfile).
-rtk_version=$1
-docker_gid=$2
+# Interface: DOCKER_GID (passed by the Dockerfile).
+docker_gid=$1
+
+# Resolve the newest stable v1 release. The bounded tag glob avoids GitHub API
+# pagination and prevents selecting a release outside the supported major.
+rtk_version=$(
+    git ls-remote --tags --refs https://github.com/rtk-ai/rtk.git 'refs/tags/v1.*' \
+        | cut -f2 | sed 's#refs/tags/##' | grep -E '^v1\.[0-9]+\.[0-9]+$' | sort -V | tail -n1
+)
 
 # RTK's installer is served from master; RTK_VERSION selects its release.
 curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh \

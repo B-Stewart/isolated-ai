@@ -20,14 +20,6 @@ RUN --mount=type=bind,source=scripts/image/base/install-system-deps.sh,target=/t
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     bash /tmp/install-system-deps.sh
 
-# Playwright browser system deps (chromium + firefox + webkit). Baked at build
-# time because runtime `playwright install --with-deps` needs sudo, which the
-# hardened devcontainer (no-new-privileges) deliberately blocks.
-RUN --mount=type=bind,source=scripts/image/base/install-playwright-deps.sh,target=/tmp/install-playwright-deps.sh,ro \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    bash /tmp/install-playwright-deps.sh
-
 # Non-root user
 # node:24-slim ships with a `node` user at UID/GID 1000 — remove it so we can
 # reclaim 1000 for `agent` (matching the default Linux/WSL user UID).
@@ -68,27 +60,21 @@ COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN --mount=type=bind,source=scripts/image/base/link-agent-tools.sh,target=/tmp/link-agent-tools.sh,ro \
     bash /tmp/link-agent-tools.sh
 
-# Installer version arguments are passed explicitly to the build-only scripts.
-ARG UV_VERSION=0.13.3
-ARG DOTNET_VERSION=10.0
-ARG BUN_VERSION=1.4.3
-ARG RTK_VERSION=v1.0.1
-ARG SPEC_KIT_TAG=v0.10.2
 # Match this group id to the mounted Docker socket on native Linux hosts.
 ARG DOCKER_GID=999
 
 # Corepack, uv, .NET SDK, and Bun. Project packageManager choices remain
-# project-controlled; standalone installer versions come from these build args.
+# project-controlled; standalone versions use selectors owned by the installer.
 RUN --mount=type=bind,source=scripts/image/base/install-runtimes.sh,target=/tmp/install-runtimes.sh,ro \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    bash /tmp/install-runtimes.sh "${UV_VERSION}" "${DOTNET_VERSION}" "${BUN_VERSION}"
+    bash /tmp/install-runtimes.sh
 
 # RTK, Trivy, GitHub CLI, and Docker CLI/Compose tools.
 RUN --mount=type=bind,source=scripts/image/base/install-cli-tools.sh,target=/tmp/install-cli-tools.sh,ro \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    bash /tmp/install-cli-tools.sh "${RTK_VERSION}" "${DOCKER_GID}"
+    bash /tmp/install-cli-tools.sh "${DOCKER_GID}"
 
 # Python tools installed via `uv tool install` into a shared, image-baked
 # location. Venvs live at /opt/uv-tools (root-owned, world-readable); shims
@@ -100,15 +86,10 @@ ENV UV_TOOL_DIR=/opt/uv-tools
 ENV UV_TOOL_BIN_DIR=/usr/local/bin
 
 # spec-kit (CLI: `specify`).
-# spec-kit isn't published to PyPI by the upstream maintainer (the `specify-cli`
-# name on PyPI is owned by an unrelated third party), so install from git at a
-# pinned tag. Previously this resolved the latest tag dynamically via the GitHub
-# API, but `api.github.com` rate-limits/blocks anonymous build-time calls,
-# bricking the build. Bump SPEC_KIT_TAG manually when a new release is wanted —
-# see https://github.com/github/spec-kit/releases.
+# The install script owns the bounded PyPI version selector.
 RUN --mount=type=bind,source=scripts/image/base/install-spec-kit.sh,target=/tmp/install-spec-kit.sh,ro \
     --mount=type=cache,target=/root/.cache/uv \
-    bash /tmp/install-spec-kit.sh "${SPEC_KIT_TAG}"
+    bash /tmp/install-spec-kit.sh
 
 # Bake agent-browser's Chrome for Testing download and Linux dependencies into
 # the image. HOME/XDG_CACHE_HOME keep its browser and runtime state under the
@@ -117,23 +98,6 @@ RUN --mount=type=bind,source=scripts/image/base/install-agent-browser.sh,target=
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     bash /tmp/install-agent-browser.sh
-
-# Pre-create the Playwright browser cache dir. Kept as a named volume in the
-# consumer devcontainer (browsers are bulky and not user-edited), so image-side
-# ownership/perms must exist as 1000:1000 for Docker's volume init to honor them.
-# Agent config dirs (~/.claude, ~/.config/opencode, ~/.local/share/opencode) are
-# intentionally NOT pre-created here — they're bind-mounted from the host so
-# config and auth state live alongside the user's native CLI installs.
-RUN mkdir -p /home/agent/.cache/ms-playwright \
-    && chown -R 1000:1000 /home/agent/.cache
-
-# Disable Playwright's stale-browser garbage collection. By default `playwright
-# install` deletes browser revisions not referenced by the *current* package
-# version — which silently wipes other projects' browsers out of the shared
-# `isolated-pw-browsers` cache volume whenever a project on a newer Playwright
-# version installs. With GC off, installs only add revisions; cleanup is manual
-# (`npx playwright uninstall --all` from inside a container) when desired.
-ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 
 # Firewall script — root-owned, executable, dormant unless invoked
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh

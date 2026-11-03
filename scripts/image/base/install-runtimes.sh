@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Interface: UV_VERSION DOTNET_VERSION BUN_VERSION (passed by the Dockerfile).
-uv_version=$1
-dotnet_version=$2
-bun_version=$3
+# Resolve the newest stable release within each supported major/minor channel.
+# Bounded tag globs avoid GitHub API pagination and never drift to another major.
+uv_version=$(
+    git ls-remote --tags --refs https://github.com/astral-sh/uv.git 'refs/tags/0.*' \
+        | cut -f2 | sed 's#refs/tags/##' | grep -E '^0\.[0-9]+\.[0-9]+$' | sort -V | tail -n1
+)
+bun_version=$(
+    git ls-remote --tags --refs https://github.com/oven-sh/bun.git 'refs/tags/bun-v1.*' \
+        | cut -f2 | sed 's#refs/tags/##' | grep -E '^bun-v1\.[0-9]+\.[0-9]+$' | sort -V | tail -n1
+)
 
 # Enable Corepack shims in /usr/local/bin; project versions remain controlled
 # by each packageManager field and are fetched into the user's writable cache.
@@ -24,9 +30,9 @@ curl -fsSL "https://packages.microsoft.com/config/debian/${VERSION_ID}/packages-
 dpkg -i /tmp/packages-microsoft-prod.deb
 rm -f /tmp/packages-microsoft-prod.deb
 apt-get update
-apt-get install -y --no-install-recommends "dotnet-sdk-${dotnet_version}"
+apt-get install -y --no-install-recommends dotnet-sdk-10.0
 rm -rf /var/lib/apt/lists/*
 
 # Bun is required by oh-my-opencode-slim's CLI and is installed in PATH.
 curl -fsSL https://bun.sh/install \
-    | env BUN_INSTALL=/usr/local bash -s -- "bun-v${bun_version}"
+    | env BUN_INSTALL=/usr/local bash -s -- "${bun_version}"

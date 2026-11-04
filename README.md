@@ -11,6 +11,7 @@ The image ships:
 | Claude Code | `claude` | Coding agent | Anthropic's CLI |
 | OpenCode v2 | `opencode` | Coding agent | Installed from `@opencode/cli@2` (the older `opencode-ai` package installs v1) |
 | oh-my-opencode-slim | `oh-my-opencode-slim` | OpenCode plugin + agents | Slimmed agent-orchestration plugin for OpenCode (Orchestrator, Explorer, Oracle, Librarian, Designer, Fixer subagents) ([alvinunreal/oh-my-opencode-slim](https://github.com/alvinunreal/oh-my-opencode-slim)). Baked in but **not auto-enabled** — install presets per host with `oh-my-opencode-slim install`. |
+| OpenCode Quota | `opencode-quota` | OpenCode plugin + CLI | Provider quota, token usage, and cost reporting ([slkiser/opencode-quota](https://github.com/slkiser/opencode-quota)). Baked in but **not auto-enabled** — enable once per host as described below. |
 | context7 | `context7-mcp` | MCP | Up-to-date library docs (Upstash) |
 | Figma (Framelink) | `figma-developer-mcp` | MCP | Public Figma REST API; requires a personal access token |
 | Firebase | `firebase` | CLI | Firebase CLI (`firebase-tools`) for project deploys, auth, and emulator workflows |
@@ -97,6 +98,18 @@ docker run -it --rm \
 ```
 
 `-it` because the installer prompts for model assignments per agent role. Re-run the same command later to change assignments or pick up new presets after a base-image rebuild.
+
+**Enable OpenCode Quota.** After rebuilding the base image with Quota included, run this once to add the plugin to your shared OpenCode configuration, preserving existing plugins:
+
+```bash
+docker run --rm \
+  -v "$HOME/.config/opencode:/home/agent/.config/opencode" \
+  -v "$HOME/.local/share/opencode:/home/agent/.local/share/opencode" \
+  braydens/agentic-base:latest \
+  opencode plugin add @slkiser/opencode-quota@6
+```
+
+OpenCode installs its own plugin copy; the image also provides `opencode-quota` for standalone terminal reports. The major-bounded entry works in native OpenCode too, without a container-specific path. Image builds and normal container startup do not modify your mounted configuration. In OpenCode, use `/quota` for limits, `/quota_usage` for usage, and `/quota_status` to check provider setup; use `/reload` if an existing session has not picked up the plugin. It uses existing provider logins where supported; some providers need additional setup as described in the [provider guide](https://github.com/slkiser/opencode-quota/blob/main/docs/readme/providers.md).
 
 **5. Install the RTK hook.** RTK's `init -g` writes a `PreToolUse` hook into `~/.claude/settings.json` so every bash invocation gets passed through the token-optimizing proxy. Run it in a throwaway container; it persists for every container plus your native `claude`:
 
@@ -484,6 +497,7 @@ configuration:
 | Claude Code | `@anthropic-ai/claude-code@2` | 2.1.304 | [npm registry](https://registry.npmjs.org/) |
 | OpenCode CLI | `@opencode/cli@2` | 2.0.32 | [npm registry](https://registry.npmjs.org/) |
 | oh-my-opencode-slim | `oh-my-opencode-slim@3` | 3.0.5 | [npm registry](https://registry.npmjs.org/) |
+| OpenCode Quota | `@slkiser/opencode-quota@6` | 6.2.1 (reviewed 2026-11-04) | [npm registry](https://registry.npmjs.org/@slkiser%2fopencode-quota/latest) |
 | Context7 MCP | `@upstash/context7-mcp@4` | 4.4.4 | [npm registry](https://registry.npmjs.org/) |
 | agent-browser | `agent-browser@0` | 0.39.1 | [npm registry](https://registry.npmjs.org/) |
 | Figma MCP | `figma-developer-mcp@0` | 0.13.2 | [npm registry](https://registry.npmjs.org/) |

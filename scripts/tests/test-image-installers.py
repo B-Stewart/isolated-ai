@@ -36,6 +36,26 @@ def docker_instructions(text):
 
 
 class ImageInstallerTests(unittest.TestCase):
+    def test_opencode_quota_uses_bounded_npm_selector_and_owned_links(self):
+        npm_tools = (IMAGE_DIR / "base" / "install-npm-tools.sh").read_text()
+        links = (IMAGE_DIR / "base" / "link-agent-tools.sh").read_text()
+
+        self.assertLess(
+            npm_tools.index("npm install -g oh-my-opencode-slim@3"),
+            npm_tools.index("npm install -g @slkiser/opencode-quota@6"),
+        )
+        self.assertIn("npm install -g @slkiser/opencode-quota@6", npm_tools)
+        self.assertIn(
+            "ln -sf ../lib/node_modules/@slkiser/opencode-quota/dist/bin/opencode-quota.js /usr/local/bin/opencode-quota",
+            links,
+        )
+        self.assertIn(
+            "ln -sf /usr/local/bin/opencode-quota /home/agent/.local/bin/opencode-quota",
+            links,
+        )
+        ownership = links.split("chown -h 1000:1000 \\\n", 1)[1]
+        self.assertIn("/home/agent/.local/bin/opencode-quota", ownership)
+
     def test_all_image_shell_scripts_parse(self):
         scripts = sorted(IMAGE_DIR.rglob("*.sh"))
         self.assertTrue(scripts, "No image installer scripts found")

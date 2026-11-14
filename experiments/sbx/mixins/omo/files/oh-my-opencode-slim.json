@@ -1,5 +1,15 @@
 {
   "autoUpdate": false,
   "multiplexer": {"type": "none"},
-  "disabled_mcps": ["context7", "gh_grep"]
+  "disabled_mcps": ["context7", "gh_grep"],
+  "agents": {
+    "orchestrator": {"model": "anthropic/claude-sonnet-4-6"},
+    "oracle": {"model": "anthropic/claude-sonnet-4-6"},
+    "explorer": {"model": "anthropic/claude-sonnet-4-6"},
+    "designer": {"model": "anthropic/claude-sonnet-4-6"},
+    "fixer": {"model": "anthropic/claude-sonnet-4-6"},
+    "observer": {"model": "anthropic/claude-sonnet-4-6"},
+    "council": {"model": "anthropic/claude-sonnet-4-6"},
+    "councillor": {"model": "anthropic/claude-sonnet-4-6"}
+  }
 }

@@ -1,2 +1,5 @@
-export PATH="/opt/isoai/bin:$PATH"
+case ":$PATH:" in
+    *:/opt/isoai/bin:*) ;;
+    *) export PATH="/opt/isoai/bin:$PATH" ;;
+esac
 eval "$(/usr/local/bin/mise activate --shims bash)"

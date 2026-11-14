@@ -11,3 +11,4 @@ export PATH="/opt/isoai/tooling/node/bin:$PATH"
 exec /opt/isoai/opencode/vendor/node_modules/.bin/opencode "$@"
 EOF
 chmod 0755 /opt/isoai/opencode/bin/opencode
+ln -s /opt/isoai/opencode/bin/opencode /opt/isoai/bin/opencode

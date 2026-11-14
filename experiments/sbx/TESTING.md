@@ -1,11 +1,11 @@
-# Deferred SBX acceptance tests
+# SBX field-test checklist
 
 Status: **not run in SBX**. Local Docker builds and offline checks are recorded
 in [README.md](README.md#verification); they do not establish sandbox behavior.
-Native WSL2 testing is deferred until a Windows update restores working nested
-virtualization on the affected AMD host. See [WSL #41917](https://github.com/microsoft/WSL/issues/41917).
-Do not disable security features or roll back Windows updates merely to complete
-this checklist.
+The Windows KVM fix is reported installed on the affected AMD host. Native WSL2
+field tests can proceed once the host-readiness checks below pass. The previous
+blocker is tracked in [WSL #41917](https://github.com/microsoft/WSL/issues/41917).
+Use the [WSL2 walkthrough](README.md#wsl2-host-setup) for setup commands.
 
 Record the date, Windows build, WSL/kernel version, SBX version, image digests,
 and result for each gate. Keep credentials, transcripts, and diagnostic logs
@@ -24,8 +24,8 @@ private. Leave unchecked items pending rather than treating builds as substitute
   record its immutable digest. Local Docker tags and `sbx template load` are
   not the v3 kit distribution path. No images have been published by this scaffold.
 
-Stop here if KVM is still unavailable. The remaining gates are intentionally
-deferred; a Windows-native SBX test would be a separate environment result.
+Stop here if KVM is still unavailable. A Windows-native SBX test would be a
+separate environment result.
 
 ## 2. Plans, creation, and isolation
 
@@ -44,6 +44,9 @@ and separate clones for the plain and OMO profiles.
 - [ ] In the plain guest, inspect the generated OpenCode config: Context7 and
   CodeGraph are present under `mcp.servers`, skills point to kit-owned guest
   paths, and there is no OMO plugin or OMO sidecar configuration.
+- [ ] Run `/opt/isoai/runtime/launch-opencode debug config` and confirm the
+  parsed CodeGraph `command` includes `serve` and `--mcp`. Inspecting only the
+  generated JSON would miss fields silently dropped by OpenCode.
 - [ ] In the OMO guest, confirm those same integrations remain present and only
   this composition includes OMO's plugin, package, and sidecar configuration.
 - [ ] Re-launching the agent produces the same generated configuration without
@@ -54,6 +57,8 @@ and separate clones for the plain and OMO profiles.
 
 - [ ] Verify `opencode`, `bun`, `mise`, `gh`, `tooling-node`, and `tooling-npm`
   versions in the guest. Verify `agent-browser` and `codegraph` are on PATH.
+  Check `bash -c`, `bash -lc`, `bash -ic`, and `bash -lic`; interactive login
+  shells must retain the tooling paths too.
 - [ ] In a disposable project, declare and deliberately trust/install a different
   supported Node version through mise. Project commands resolve that version in
   interactive and non-interactive shells; tooling wrappers retain the image's
@@ -74,7 +79,9 @@ and separate clones for the plain and OMO profiles.
 - [ ] Provision the browser and Linux libraries explicitly using the
   [browser note](mixins/browser/README.md). Permit only needed download/test
   destinations. Open a known test page headlessly, inspect its content, and save
-  a screenshot. CLI installation alone does not satisfy this gate.
+  a screenshot. Run provisioning twice as the guest user to check repeatability;
+  a failed package install must fail the command. CLI installation alone does
+  not satisfy this gate. Record the downloaded browser's version.
 
 ## 4. Credentials and optional paid agent tests
 
@@ -84,8 +91,9 @@ and separate clones for the plain and OMO profiles.
 - [ ] **Only after opting into provider charges**, perform one small plain-agent
   request and confirm ordinary approval behavior is retained.
 - [ ] Check OMO's compatibility with the pinned OpenCode version and inspect its
-  effective presets/models. Do not assume specialists inherit the workload's
-  Anthropic model or that all required provider credentials already exist.
+  effective models. The kit explicitly selects `anthropic/claude-sonnet-4-6`
+  for built-in agents; verify that it loaded and project overrides have not
+  changed the provider/model. Model selection alone does not prove compatibility.
 - [ ] **Only after opting into additional charges**, perform one bounded OMO
   delegation and verify the intended specialist, provider/model, MCPs, and skills.
 
@@ -93,6 +101,7 @@ and separate clones for the plain and OMO profiles.
 
 - [ ] Stop and restart each sandbox. Installed project runtimes, guest config,
   and intended agent state persist; MCPs/skills still work after reconnecting.
+  Use the [lifecycle commands](README.md#stop-restart-and-remove).
 - [ ] Preserve any desired private files before removing the test environments
   with the matching profile, arguments, and names. Direct-mounted project files
   remain intact; guest-only state is removed. Do not use global `sbx reset` for
@@ -101,3 +110,23 @@ and separate clones for the plain and OMO profiles.
 Acceptance requires the applicable gates above plus a recorded explanation for
 any deliberate skips. Browser and paid-agent gates can remain explicitly pending
 if those features are not yet being adopted.
+
+## Run record
+
+Copy this table into your private test notes for each profile. Record failures
+and deliberate skips as well as passes; keep the committed checklist unchecked
+until an actual SBX run establishes the result.
+
+| Item | Recorded value/result |
+| --- | --- |
+| Date and repository commit | |
+| Windows build; WSL/kernel; SBX version | |
+| Profile, sandbox name, disposable workspace | |
+| Shared base digest and kit source commit | |
+| KVM and workspace access | |
+| Plan, creation, and isolation | |
+| Shell modes and project/tooling Node | |
+| Context7 query; CodeGraph exploration; skills | |
+| Browser version, repeat provisioning, screenshot | |
+| Effective models; plain/OMO inference or skip reason | |
+| Stop/restart persistence; removal | |

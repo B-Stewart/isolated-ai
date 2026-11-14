@@ -157,6 +157,21 @@ class SandboxConfigTests(unittest.TestCase):
                 else:
                     self.assertTrue(has_omo)
 
+    def test_omo_models_use_the_workloads_configured_provider(self):
+        workload = json.loads((WORKLOADS / "opencode/files/fragments/10-opencode.json").read_text())
+        omo = json.loads((MIXINS / "omo/files/oh-my-opencode-slim.json").read_text())
+        self.assertEqual(set(omo["agents"]), {
+            "orchestrator", "oracle", "explorer", "designer", "fixer", "observer", "council", "councillor",
+        })
+        for agent in omo["agents"].values():
+            self.assertEqual(agent["model"], workload["model"])
+
+    def test_experiment_shell_scripts_parse(self):
+        paths = [*SBX.rglob("*.sh"), SBX / "base/bash-env", SBX / "runtime/launch-opencode"]
+        for path in paths:
+            with self.subTest(path=path):
+                subprocess.run(["bash", "-n", str(path)], check=True, capture_output=True, text=True)
+
 
 if __name__ == "__main__":
     unittest.main()

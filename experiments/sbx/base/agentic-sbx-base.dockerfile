@@ -20,6 +20,8 @@ COPY runtime/ /opt/isoai/runtime/
 COPY base/bash-env /etc/isoai/bash_env
 RUN chmod 0755 /opt/isoai/runtime/launch-opencode /opt/isoai/runtime/assemble-opencode.mjs \
     && useradd --uid 1000 --create-home --shell /bin/bash agent \
+    && printf '%s\n' '. /etc/isoai/bash_env' >> /etc/bash.bashrc \
+    && printf '%s\n' 'if [ -n "${BASH_VERSION:-}" ]; then . /etc/isoai/bash_env; fi' > /etc/profile.d/isoai.sh \
     && mkdir -p /home/agent/.config/opencode /opt/isoai/opencode/fragments.d /opt/isoai/opencode/bin \
     && printf '%s\n' 'Defaults env_keep += "http_proxy https_proxy ftp_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY FTP_PROXY ALL_PROXY NO_PROXY"' > /etc/sudoers.d/isoai-proxy \
     && printf '%s\n' 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent \

@@ -13,6 +13,7 @@ capabilities:
     config:
       runtime:
         allow:
+          - deb.debian.org:80
           - storage.googleapis.com:443
           - googlechromelabs.github.io:443
           - cdn.playwright.dev:443

@@ -357,7 +357,9 @@ agent-neutral base, a thin OpenCode workload, and selectable OMO-slim, MCP,
 skills, and browser mixins. It is independent of the images above and keeps
 agent configuration inside each sandbox, without a host Docker socket mount
 or host-global MCP registration. Existing `isoai` and Dev Container behavior
-is unchanged. See the guide for build/runtime verification limits and the
+is unchanged. Start with the [WSL2 setup walkthrough](experiments/sbx/README.md#wsl2-host-setup)
+and [field-test checklist](experiments/sbx/TESTING.md). See the guide for
+build/runtime verification limits and the
 [comparison research](isoai-alternatives-research.md) for the trade-offs.
 
 #### Advanced/manual one-shot alternatives

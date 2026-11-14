@@ -13,6 +13,6 @@ chmod 0755 "$root/bin/agent-browser"
 cat > "$root/install-browser" <<'EOF'
 #!/bin/bash
 set -euo pipefail
-exec /opt/isoai/mixins/browser/bin/agent-browser install "$@"
+exec /opt/isoai/mixins/browser/bin/agent-browser install --with-deps "$@"
 EOF
 chmod 0755 "$root/install-browser"

@@ -3,8 +3,7 @@
     "servers": {
       "codegraph": {
         "type": "local",
-        "command": ["/opt/isoai/mixins/codegraph/codegraph"],
-        "args": ["serve", "--mcp"]
+        "command": ["/opt/isoai/mixins/codegraph/codegraph", "serve", "--mcp"]
       }
     }
   }
